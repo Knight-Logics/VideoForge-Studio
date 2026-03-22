@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run VideoForge Studio (Dev)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"run_dev.ps1"
+			],
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}

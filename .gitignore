@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Workspace runtime data — never commit
+workspace/uploads/
+workspace/jobs/
+workspace/outputs/
+workspace/cache/
+workspace/preview_cache/
+workspace/preview_jobs/
+workspace/test_assets/
+
+# Live billing data — contains real user tokens & payment records
+workspace/billing_tokens.json
+workspace/billing_audit.jsonl

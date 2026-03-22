@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+workspace/uploads
+workspace/jobs
+workspace/outputs
+workspace/cache
+workspace/preview_cache
+workspace/preview_jobs
+workspace/test_assets
+workspace/billing_tokens.json
+workspace/billing_audit.jsonl

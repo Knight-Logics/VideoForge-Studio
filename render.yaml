@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: videoforge-studio
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: APP_DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_BILLING_KEY
+        generateValue: true
+      - key: APP_BASE_URL
+        value: https://videoforge.knightlogics.com
+      - key: ALLOW_SHARED_ELEVENLABS_KEY
+        value: "false"
+      - key: REQUIRE_PAYMENT_FOR_SHARED_KEY
+        value: "true"
+    disk:
+      name: videoforge-workspace
+      mountPath: /app/workspace
+      sizeGB: 10
