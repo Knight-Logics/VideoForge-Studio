@@ -20,9 +20,12 @@ $itemsToCopy = @(
     'requirements.txt',
     '.env.example',
     'README.md',
+    'DOWNLOAD_AND_RUN.md',
     'USER_LOCAL_MODE.md',
     'install_local_user.ps1',
     'launch_local_user.ps1',
+    'install_videoforge.bat',
+    'start_videoforge.bat',
     'src',
     'static',
     'templates'
