@@ -10,7 +10,15 @@ if (-not (Test-Path $pythonExe)) {
 }
 
 $cloudflaredCmd = Get-Command cloudflared -ErrorAction SilentlyContinue
-if (-not $cloudflaredCmd) {
+$cloudflaredExe = if ($cloudflaredCmd) {
+    $cloudflaredCmd.Source
+} elseif (Test-Path 'C:\Program Files (x86)\cloudflared\cloudflared.exe') {
+    'C:\Program Files (x86)\cloudflared\cloudflared.exe'
+} else {
+    $null
+}
+
+if (-not $cloudflaredExe) {
     Write-Host 'cloudflared is not installed or not on PATH.' -ForegroundColor Yellow
     Write-Host 'Install from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/' -ForegroundColor Yellow
     exit 1
@@ -30,7 +38,7 @@ Write-Host 'Starting free Cloudflare tunnel (temporary URL)...' -ForegroundColor
 Write-Host 'Press Ctrl+C to stop the tunnel. Then stop the app process if needed.' -ForegroundColor Cyan
 
 try {
-    & cloudflared tunnel --url http://127.0.0.1:5050
+    & $cloudflaredExe tunnel --url http://127.0.0.1:5050
 }
 finally {
     if (-not $server.HasExited) {
