@@ -41,11 +41,8 @@ $maxRequestBodySize = $maxUploadMb * 1024 * 1024
 
 # Resolve Python: prefer local .venv → shared dev venv → system PATH
 $localPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-$sharedPython = 'e:\YouTube Backups\.venv\Scripts\python.exe'
 if (Test-Path $localPython) {
 	$pythonExe = $localPython
-} elseif (Test-Path $sharedPython) {
-	$pythonExe = $sharedPython
 } else {
 	$pythonExe = 'python'
 }

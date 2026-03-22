@@ -22,6 +22,20 @@ Recommended public deployment: its own repository in the Knight Logics GitHub or
 
 ---
 
+## Local User Mode (Recommended for User-Side Processing)
+
+If you want each user to use their own computer resources (instead of your machine), distribute this app as a local package.
+
+Quick path:
+
+1. User runs `./install_local_user.ps1`
+2. User runs `./launch_local_user.ps1`
+3. App opens at `http://127.0.0.1:5050` and renders locally on that user's hardware
+
+See full details in `USER_LOCAL_MODE.md`.
+
+---
+
 ## Why RawGitHack Will Not Work
 
 RawGitHack is for serving static files (HTML/CSS/JS) directly from a Git repository.
