@@ -37,6 +37,43 @@ Because of this, use a backend host (for example Render, Railway, Fly.io, or a V
 
 ---
 
+## Free Deployment Option (No Monthly Hosting Bill)
+
+If you need zero monthly hosting cost, run VideoForge on your own machine and expose it using a Cloudflare Tunnel.
+
+This keeps infrastructure cost at $0, with these tradeoffs:
+
+- Your computer must stay on while the app is public
+- Upload/render performance depends on your machine and internet
+- Availability is not guaranteed like managed cloud hosting
+
+### Quick temporary public URL (free)
+
+1. Start the app locally:
+  - `./run_prod.ps1`
+2. In another terminal, run:
+  - `cloudflared tunnel --url http://127.0.0.1:5050`
+3. Cloudflare prints a temporary `trycloudflare.com` URL you can share.
+
+### Stable free custom domain URL
+
+Use this when you want `videoforge.knightlogics.com` without a paid host:
+
+1. Move DNS for your domain to Cloudflare (free plan)
+2. Install `cloudflared` on the machine running VideoForge
+3. Authenticate once:
+  - `cloudflared tunnel login`
+4. Create a named tunnel:
+  - `cloudflared tunnel create videoforge`
+5. Route DNS:
+  - `cloudflared tunnel route dns videoforge videoforge.knightlogics.com`
+6. Run the tunnel mapped to local app:
+  - `cloudflared tunnel --url http://127.0.0.1:5050 --hostname videoforge.knightlogics.com`
+
+When this tunnel is running, your app is publicly reachable at `https://videoforge.knightlogics.com` with no monthly hosting bill.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
