@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import smtplib
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -16,11 +17,14 @@ from src.billing import BillingStore
 from src.job_manager import JobManager
 from src.models import ClipInput, RenderSettings
 from src.token_service import create_paid_access_token, is_valid_paid_access_token
+from src.utils import get_resource_root, get_runtime_root
 
 load_dotenv()
 
-APP_ROOT = Path(__file__).parent
-WORKSPACE = APP_ROOT / "workspace"
+RESOURCE_ROOT = get_resource_root()
+RUNTIME_ROOT = get_runtime_root()
+APP_ROOT = RESOURCE_ROOT
+WORKSPACE = RUNTIME_ROOT / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 OUTPUTS = WORKSPACE / "outputs"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "4096"))
@@ -212,7 +216,11 @@ def _finalize_paid_checkout_session(session) -> tuple[str, int, bool]:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(RESOURCE_ROOT / "templates"),
+        static_folder=str(RESOURCE_ROOT / "static"),
+    )
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 

@@ -2,23 +2,45 @@
 
 This version is designed to use the end user's own computer for rendering.
 
-## What users need
+## Recommended download
+
+Use the packaged Windows exe release.
+
+What it includes:
+- Bundled Python runtime
+- Bundled `ffmpeg.exe`
+- Bundled `ffprobe.exe`
+- Local browser-based UI launcher
+
+## EXE fast start
+
+1. Download the latest `VideoForge-Studio-Windows-Exe.zip` from GitHub Releases
+2. Extract the zip to any folder
+3. Open the extracted `VideoForge-Studio` folder
+4. Double-click `VideoForge-Studio.exe`
+5. Your browser opens to:
+   - `http://127.0.0.1:5050`
+
+## Source-mode fallback
+
+Use this only if you want to run from source instead of the packaged exe.
+
+### What users need for source mode
 
 - Windows 10 or 11
 - Python 3.12 installed
 - FFmpeg installed and added to PATH
-- Internet connection only if using optional ElevenLabs or Stripe features
 
-## Fast start
+### Source-mode fast start
 
-1. Download the latest portable release zip from GitHub Releases
+1. Download the portable source zip from GitHub Releases
 2. Extract the zip to any folder
 3. Double-click `install_videoforge.bat`
 4. After setup completes, double-click `start_videoforge.bat`
 5. Your browser opens to:
    - `http://127.0.0.1:5050`
 
-## First-time setup details
+## Source-mode setup details
 
 ### Python
 
@@ -36,6 +58,10 @@ Install FFmpeg and make sure `ffmpeg` works in a new terminal.
 - No render workload is sent to Knight Logics infrastructure
 
 ## Common problems
+
+### EXE does not start
+
+Try running `VideoForge-Studio.exe` from a normal folder like Desktop or Downloads, not from inside the zip.
 
 ### Python not found
 

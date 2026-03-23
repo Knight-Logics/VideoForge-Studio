@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -19,9 +21,56 @@ def ensure_dirs(paths: list[Path]) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def get_resource_root() -> Path:
+    override = os.environ.get("VIDEOFORGE_RESOURCE_ROOT")
+    if override:
+        return Path(override)
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    return Path(__file__).resolve().parent.parent
+
+
+def get_runtime_root() -> Path:
+    override = os.environ.get("VIDEOFORGE_RUNTIME_ROOT")
+    if override:
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return get_resource_root()
+
+
+def resolve_command(binary_name: str) -> str:
+    runtime_root = get_runtime_root()
+    candidate_names = [binary_name]
+    if os.name == "nt" and not binary_name.lower().endswith(".exe"):
+        candidate_names.insert(0, f"{binary_name}.exe")
+
+    candidate_paths: list[Path] = []
+    for candidate_name in candidate_names:
+        candidate_paths.extend(
+            [
+                runtime_root / candidate_name,
+                runtime_root / "bin" / candidate_name,
+                runtime_root / "ffmpeg" / candidate_name,
+                runtime_root / "ffmpeg" / "bin" / candidate_name,
+            ]
+        )
+
+    for candidate in candidate_paths:
+        if candidate.exists():
+            return str(candidate)
+
+    resolved = shutil.which(binary_name)
+    if resolved:
+        return resolved
+
+    return binary_name
+
+
 def get_media_duration_seconds(path: Path) -> float:
     cmd = [
-        "ffprobe",
+        resolve_command("ffprobe"),
         "-v",
         "error",
         "-show_entries",

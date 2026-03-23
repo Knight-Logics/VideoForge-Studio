@@ -9,6 +9,8 @@ from typing import Optional
 
 import requests
 
+from .utils import resolve_command
+
 ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
 
 
@@ -25,7 +27,7 @@ def sanitize_tts_text(text: str) -> str:
 def _probe_duration(audio_path: Path) -> float:
     result = subprocess.run(
         [
-            "ffprobe",
+            resolve_command("ffprobe"),
             "-v",
             "error",
             "-show_entries",

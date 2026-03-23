@@ -4,7 +4,7 @@ A web application for rendering ranked/countdown-style videos from uploaded clip
 
 > Developed by [Knight Logics](https://knightlogics.com)
 
-Recommended distribution model: downloadable local-user package so each user renders on their own machine.
+Recommended distribution model: downloadable Windows exe package so each user renders on their own machine.
 
 
 ## Features
@@ -28,8 +28,8 @@ If you want each user to use their own computer resources (instead of your machi
 
 Quick path:
 
-1. User runs `install_videoforge.bat`
-2. User runs `start_videoforge.bat`
+1. User downloads the Windows exe release zip
+2. User extracts it and runs `VideoForge-Studio.exe`
 3. App opens at `http://127.0.0.1:5050` and renders locally on that user's hardware
 
 See full details in `DOWNLOAD_AND_RUN.md` and `USER_LOCAL_MODE.md`.

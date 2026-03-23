@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .utils import run_command
+from .utils import resolve_command, run_command
 
 
 def normalize_clip(
@@ -18,7 +18,7 @@ def normalize_clip(
         "setsar=1"
     )
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-i",
         str(input_path),
@@ -41,7 +41,7 @@ def normalize_clip(
 
 def overlay_image(video_path: Path, overlay_png: Path, output_path: Path) -> None:
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-i",
         str(video_path),
@@ -69,7 +69,7 @@ def overlay_frame_sequence(
     output_path: Path,
 ) -> None:
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-i",
         str(video_path),
@@ -95,7 +95,7 @@ def overlay_frame_sequence(
 
 def mix_audio_tracks(video_path: Path, narration_mp3: Path, output_path: Path) -> None:
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-i",
         str(video_path),
@@ -123,7 +123,7 @@ def overlay_caption_frames(
     output_path: Path,
 ) -> None:
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-i",
         str(video_path),
@@ -161,7 +161,7 @@ def create_intermission(
     
     if audio_path is None:
         cmd = [
-            "ffmpeg",
+            resolve_command("ffmpeg"),
             "-y",
             "-f",
             "lavfi",
@@ -180,7 +180,7 @@ def create_intermission(
         ]
     else:
         cmd = [
-            "ffmpeg",
+            resolve_command("ffmpeg"),
             "-y",
             "-f",
             "lavfi",
@@ -220,7 +220,7 @@ def concatenate_segments(segments: list[Path], output_path: Path, width: int, he
     )
 
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         *inputs,
         "-filter_complex",
@@ -244,7 +244,7 @@ def concatenate_segments(segments: list[Path], output_path: Path, width: int, he
 
 def mix_background_music(video_path: Path, music_path: Path, output_path: Path, music_volume: float = 0.15) -> None:
     cmd = [
-        "ffmpeg",
+        resolve_command("ffmpeg"),
         "-y",
         "-stream_loop",
         "-1",
