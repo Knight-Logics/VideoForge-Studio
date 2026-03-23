@@ -33,13 +33,15 @@ const renderProtectionNote = document.getElementById("renderProtectionNote");
 const finalRenderSummary = document.getElementById("finalRenderSummary");
 const renderHistory = document.getElementById("renderHistory");
 const narrationBillingPanel = document.getElementById("narrationBillingPanel");
-const narrationModeOwned = document.getElementById("narrationModeOwned");
-const narrationModeHosted = document.getElementById("narrationModeHosted");
 const narrationModeStatus = document.getElementById("narrationModeStatus");
 const estimatedCreditCost = document.getElementById("estimatedCreditCost");
-const ownedKeySection = document.getElementById("ownedKeySection");
 const hostedCreditsSection = document.getElementById("hostedCreditsSection");
 const enableNarrationInput = document.getElementById("enableNarration");
+const voiceIdInput = document.getElementById("voiceId");
+const previewVoiceBtn = document.getElementById("previewVoiceBtn");
+const updateStatusBanner = document.getElementById("updateStatusBanner");
+const updateStatusText = document.getElementById("updateStatusText");
+const updateDownloadLink = document.getElementById("updateDownloadLink");
 
 let currentSource = null;
 const TOKEN_STORAGE_KEY = "videoforge_paid_access_token";
@@ -58,6 +60,8 @@ let hostedTokenPromise = null;
 const musicLevelInput = document.getElementById("musicLevel");
 const musicLevelRow = document.getElementById("musicLevelRow");
 const includeMusic = document.getElementById("includeMusic");
+const intermissionPreviewRow = document.getElementById("intermissionPreviewRow");
+const intermissionOpacityWrap = document.getElementById("intermissionOpacityWrap");
 
 // ── Access code recovery elements ──────────────────────────────────────────
 const accessCodeBanner      = document.getElementById("accessCodeBanner");
@@ -77,7 +81,10 @@ const restoreCodeInput      = document.getElementById("restoreCodeInput");
 const applyRestoreCodeBtn   = document.getElementById("applyRestoreCodeBtn");
 const restoreCodeStatus     = document.getElementById("restoreCodeStatus");
 const openRecoveryModalLink = document.getElementById("openRecoveryModalLink");
+const openRecoveryModalBannerLink = document.getElementById("openRecoveryModalBannerLink");
 const openRestoreCodeLink   = document.getElementById("openRestoreCodeLink");
+const openRestoreCodeBannerLink = document.getElementById("openRestoreCodeBannerLink");
+const openRestoreCodeModalLink = document.getElementById("openRestoreCodeModalLink");
 const openRestoreCodeInlineLink = document.getElementById("openRestoreCodeInlineLink");
 const accessCodeDismissNote = document.querySelector(".access-code-dismiss-note");
 const accessEmailRow        = document.getElementById("accessEmailRow");
@@ -112,6 +119,66 @@ function getSelectedUploadBytes() {
   const bgMusic = document.getElementById("backgroundMusic").files[0];
   const totalClipBytes = clipFiles.reduce((sum, file) => sum + (file.size || 0), 0);
   return totalClipBytes + (bgMusic?.size || 0);
+}
+
+function setUpdateBanner(message, options = {}) {
+  if (!updateStatusBanner || !updateStatusText) {
+    return;
+  }
+
+  updateStatusText.textContent = message;
+  updateStatusBanner.hidden = false;
+  updateStatusBanner.classList.toggle("is-available", Boolean(options.available));
+
+  if (!updateDownloadLink) {
+    return;
+  }
+
+  const href = (options.href || "").trim();
+  if (href) {
+    updateDownloadLink.href = href;
+    updateDownloadLink.hidden = false;
+    updateDownloadLink.textContent = options.linkText || "Download Update";
+  } else {
+    updateDownloadLink.hidden = true;
+    updateDownloadLink.removeAttribute("href");
+  }
+}
+
+async function checkForAppUpdate() {
+  if (!updateStatusBanner) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/app-update");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Update check failed");
+    }
+
+    if (!data.enabled) {
+      updateStatusBanner.hidden = true;
+      return;
+    }
+
+    if (data.update_available) {
+      const latest = data.latest_version || "latest";
+      const current = data.current_version || "current";
+      const target = data.download_url || data.release_url || "";
+      setUpdateBanner(`Update available: ${latest} (current ${current}).`, {
+        available: true,
+        href: target,
+        linkText: "Download Update",
+      });
+      return;
+    }
+
+    updateStatusBanner.hidden = true;
+  } catch (error) {
+    setUpdateBanner("Could not check for updates right now.");
+    log(`Update check failed: ${error.message}`);
+  }
 }
 
 function refreshSelectedUploadSize() {
@@ -168,6 +235,7 @@ function updateFinalExportsUI() {
   const latest = completedFinalRenders[0];
   finalRenderSummary.textContent = `Latest export: ${latest.usedNarration ? "with" : "without"} ElevenLabs narration at ${latest.completedAt}.`;
   downloadLink.href = latest.href;
+  downloadLink.download = latest.filename || "VideoForge-Studio-render.mp4";
   downloadLink.hidden = false;
 
   if (completedFinalRenders.length === 1) {
@@ -206,6 +274,7 @@ function renderClipGallery() {
     card.className = "clip-card";
     card.dataset.index = String(index);
     card.innerHTML = `
+      <span class="clip-index-badge">#${index + 1}</span>
       <video src="${clip.objectUrl}" controls preload="metadata"></video>
       <p class="clip-caption-label">Clip Card Title</p>
       <input class="clip-title-input" type="text" data-role="clipTitleInput" data-index="${index}" value="${clip.title.replace(/\"/g, "&quot;")}" placeholder="Edit displayed clip title">
@@ -328,14 +397,16 @@ async function ensureHostedToken() {
 }
 
 function getNarrationMode() {
-  if (narrationModeHosted && narrationModeHosted.checked) {
-    return "hosted";
-  }
-  return "owned";
+  return "hosted";
 }
 
-function getNarrationCharacterCount() {
-  return selectedClips.reduce((sum, clip) => sum + String((clip.caption || "").trim()).length, 0);
+function getNarrationWordCount() {
+  return selectedClips.reduce((sum, clip) => {
+    const text = String((clip.caption || "").trim());
+    if (!text) return sum;
+    const words = text.split(/\s+/).filter(Boolean).length;
+    return sum + words;
+  }, 0);
 }
 
 function formatFreeTrialUses(count) {
@@ -372,13 +443,17 @@ function updateCreditBalanceHint() {
 }
 
 function getNarrationCreditEstimate() {
-  const creditCost = Math.max(1, Number((billingConfig && billingConfig.shared_key_render_price_credits) || 1));
+  const wordsPerCredit = Math.max(1, Number((billingConfig && billingConfig.narration_words_per_credit) || 30));
+  const wordCount = Math.max(0, getNarrationWordCount());
+  const creditCost = Math.max(1, Math.ceil(Math.max(1, wordCount) / wordsPerCredit));
   const narrationEnabled = Boolean(enableNarrationInput && enableNarrationInput.checked);
   const mode = getNarrationMode();
   const hostedMode = narrationEnabled && mode === "hosted";
 
   return {
     creditCost,
+    wordCount,
+    wordsPerCredit,
     narrationEnabled,
     mode,
     hostedMode,
@@ -410,20 +485,13 @@ function updateActionCreditUsage() {
     return;
   }
 
-  if (estimate.mode === "owned") {
-    renderCreditUsage.textContent = freeTrialRemaining > 0
-      ? `(${formatFreeTrialUses(freeTrialRemaining)}) Using your own ElevenLabs key.`
-      : "(Using your own ElevenLabs key)";
-    return;
-  }
-
   if (freeTrialRemaining > 0) {
-    renderCreditUsage.textContent = `(${formatFreeTrialUses(freeTrialRemaining)}) ElevenLabs narration needs ${estimate.creditCost} credit${estimate.creditCost === 1 ? "" : "s"}.`;
+    renderCreditUsage.textContent = `(${formatFreeTrialUses(freeTrialRemaining)}) ElevenLabs narration needs ${estimate.creditCost} credit${estimate.creditCost === 1 ? "" : "s"} for ${estimate.wordCount} words.`;
     return;
   }
 
   if (paidCredits >= estimate.creditCost) {
-    renderCreditUsage.textContent = `(${paidCredits} Credit${paidCredits === 1 ? "" : "s"} Available) ElevenLabs narration needs ${estimate.creditCost}.`;
+    renderCreditUsage.textContent = `(${paidCredits} Credit${paidCredits === 1 ? "" : "s"} Available) ElevenLabs narration needs ${estimate.creditCost} for ${estimate.wordCount} words.`;
     return;
   }
 
@@ -443,34 +511,22 @@ function updateNarrationBillingUI() {
     return;
   }
 
-  const mode = getNarrationMode();
-  if (ownedKeySection) {
-    ownedKeySection.hidden = mode !== "owned";
-  }
   if (hostedCreditsSection) {
-    hostedCreditsSection.hidden = mode !== "hosted";
+    hostedCreditsSection.hidden = false;
   }
 
-  if (mode === "owned") {
-    narrationModeStatus.textContent = "Current mode: Use my own ElevenLabs key. App credits are not charged.";
-  } else {
-    const freeTrialRemaining = Math.max(0, Number((accountBillingStatus && accountBillingStatus.free_trial_remaining) || 0));
-    narrationModeStatus.textContent = freeTrialRemaining > 0
-      ? `Current mode: Use app credits. You still have ${formatFreeTrialUses(freeTrialRemaining)}, but ElevenLabs narration is not included in the free trial.`
-      : "Current mode: Use app credits. ElevenLabs narration requires credits in your account.";
-    ensureHostedToken()
-      .then((token) => refreshTokenCreditsUI(token))
-      .catch((error) => {
-        log(`Could not prepare credits: ${error.message}`);
-      });
-  }
+  const freeTrialRemaining = Math.max(0, Number((accountBillingStatus && accountBillingStatus.free_trial_remaining) || 0));
+  narrationModeStatus.textContent = freeTrialRemaining > 0
+    ? `Narration is billed using app credits. You still have ${formatFreeTrialUses(freeTrialRemaining)} for non-narration renders; narration itself requires credits.`
+    : "Narration is billed using app credits only.";
+  ensureHostedToken()
+    .then((token) => refreshTokenCreditsUI(token))
+    .catch((error) => {
+      log(`Could not prepare credits: ${error.message}`);
+    });
 
   const estimate = getNarrationCreditEstimate();
-  if (!estimate.hostedMode) {
-    estimatedCreditCost.textContent = "Estimated credit cost: 0 with current mode/settings.";
-  } else {
-    estimatedCreditCost.textContent = `Estimated credit cost: ${estimate.creditCost} credit${estimate.creditCost === 1 ? "" : "s"} for ElevenLabs narration.`;
-  }
+  estimatedCreditCost.textContent = `Estimated credit cost: ${estimate.creditCost} credit${estimate.creditCost === 1 ? "" : "s"} (${estimate.wordCount} words at 1 credit per ${estimate.wordsPerCredit} words).`;
   updateActionCreditUsage();
 }
 
@@ -854,6 +910,79 @@ async function fetchTokenCredits(token) {
   return data;
 }
 
+async function saveRenderToHistory(outputFilename, token) {
+  if (!token || !activeRenderMeta) return;
+  try {
+    const body = {
+      output_filename: outputFilename,
+      title_line_1: activeRenderMeta.title_line_1 || "Top 5 Funniest",
+      title_line_2: activeRenderMeta.title_line_2 || "Moments",
+      used_narration: activeRenderMeta.usedNarration,
+      output_width: activeRenderMeta.output_width,
+      output_height: activeRenderMeta.output_height,
+    };
+    const response = await fetch("/api/renders/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...body,
+        token,
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      log(`Warning: Could not save render to history: ${data.error}`);
+    } else {
+      const data = await response.json();
+      log("Render saved to your history (accessible via access code).");
+      // Refresh render history display
+      loadRenderHistory(token);
+    }
+  } catch (error) {
+    log(`Warning: Render history save failed: ${error.message}`);
+  }
+}
+
+async function loadRenderHistory(token) {
+  if (!token || !renderHistory) return;
+  try {
+    const response = await fetch(`/api/renders/list?token=${encodeURIComponent(token)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      renderHistory.innerHTML = `<p class="history-error">Could not load render history.</p>`;
+      renderHistory.hidden = false;
+      return;
+    }
+    const renders = data.renders || [];
+    if (renders.length === 0) {
+      renderHistory.innerHTML = `<p class="history-empty">No previous renders yet. Complete your first render to build your history.</p>`;
+      renderHistory.hidden = false;
+      return;
+    }
+    const historyHtml = renders
+      .map(
+        (r, idx) => `
+      <div class="history-item">
+        <div class="history-item-title">#${renders.length - idx}. ${r.title_line_1} ${r.title_line_2}</div>
+        <div class="history-item-meta">
+          ${r.output_width}×${r.output_height} • ${r.used_narration ? "with" : "without"} narration
+        </div>
+        <div class="history-item-date">${new Date(r.completed_at).toLocaleString()}</div>
+        <a href="/outputs/${encodeURIComponent(r.filename)}" download="${r.filename}" class="history-download-link">
+          ⬇ Download
+        </a>
+      </div>
+    `
+      )
+      .join("");
+    renderHistory.innerHTML = `<div class="renders-history-header">Your Render History</div>${historyHtml}`;
+    renderHistory.hidden = false;
+  } catch (error) {
+    renderHistory.innerHTML = `<p class="history-error">Error loading history: ${error.message}</p>`;
+    renderHistory.hidden = false;
+  }
+}
+
 function subscribeToEvents(jobId) {
   closeStream();
   const source = new EventSource(`/api/jobs/${jobId}/events`);
@@ -876,6 +1005,7 @@ function subscribeToEvents(jobId) {
       const href = `/outputs/${encodeURIComponent(data.output_file)}`;
       completedFinalRenders.unshift({
         href,
+        filename: data.output_file,
         label: data.output_file,
         usedNarration: Boolean(activeRenderMeta && activeRenderMeta.usedNarration),
         completedAt: new Date().toLocaleTimeString(),
@@ -884,6 +1014,14 @@ function subscribeToEvents(jobId) {
       hasChangesSinceLastRender = false;
       updateRenderProtectionNote();
       updateFinalExportsUI();
+      
+      // Save render to server history
+      const token = getTokenInput().value.trim();
+      if (token) {
+        saveRenderToHistory(data.output_file, token).catch((error) => {
+          log(`Render history save error: ${error.message}`);
+        });
+      }
     }
     log("Render completed successfully.");
     submitBtn.disabled = false;
@@ -943,9 +1081,7 @@ form.addEventListener("submit", async (event) => {
   const listFontFamily = listFontFamilyInput.value;
   const titleFontSize = Number(titleFontSizeInput.value);
   const listFontSize = Number(listFontSizeInput.value);
-  const voiceId = document.getElementById("voiceId").value.trim();
-  const narrationMode = getNarrationMode();
-  const rawElevenApiKey = document.getElementById("elevenApiKey").value.trim();
+  const voiceId = voiceIdInput ? voiceIdInput.value.trim() : "";
   let rawPaidAccessToken = document.getElementById("paidAccessToken").value.trim();
   if (!rawPaidAccessToken) {
     try {
@@ -954,7 +1090,7 @@ form.addEventListener("submit", async (event) => {
       log(`Could not prepare account token: ${error.message}`);
     }
   }
-  if (enableNarration && narrationMode === "hosted" && !rawPaidAccessToken) {
+  if (enableNarration && !rawPaidAccessToken) {
     try {
       rawPaidAccessToken = await ensureHostedToken();
       await refreshTokenCreditsUI(rawPaidAccessToken);
@@ -962,7 +1098,6 @@ form.addEventListener("submit", async (event) => {
       log(`Could not prepare credits: ${error.message}`);
     }
   }
-  const elevenApiKey = narrationMode === "owned" ? rawElevenApiKey : "";
   const paidAccessToken = rawPaidAccessToken;
   const useIntermissions = document.getElementById("useIntermissions").checked;
   const intermissionOpacity = Number(document.getElementById("intermissionOpacity").value);
@@ -995,16 +1130,9 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  if (enableNarration && narrationMode === "owned" && !elevenApiKey) {
+  if (enableNarration && !paidAccessToken) {
     statusText.textContent = "validation error";
-    jobText.textContent = "Paste your ElevenLabs API key, or switch to Hosted Credits mode.";
-    submitBtn.disabled = false;
-    return;
-  }
-
-  if (enableNarration && narrationMode === "hosted" && !paidAccessToken) {
-    statusText.textContent = "validation error";
-    jobText.textContent = "Hosted token unavailable right now. Retry in a moment or switch to Own Key mode.";
+    jobText.textContent = "Narration token unavailable right now. Retry in a moment.";
     submitBtn.disabled = false;
     return;
   }
@@ -1042,7 +1170,6 @@ form.addEventListener("submit", async (event) => {
   payload.append("use_intermissions", useIntermissions ? "true" : "false");
   payload.append("intermission_opacity", String(intermissionOpacity));
   payload.append("elevenlabs_voice_id", voiceId);
-  payload.append("elevenlabs_api_key", elevenApiKey);
   payload.append("paid_access_token", paidAccessToken);
   payload.append("captions_json", JSON.stringify(clipCaptions));
   clipCaptions.forEach((caption) => payload.append("captions", caption));
@@ -1054,8 +1181,14 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const jobId = await startJob(payload);
+    const titleLine1 = document.getElementById("titleLine1").value.trim() || "Top 5 Funniest";
+    const titleLine2 = document.getElementById("titleLine2").value.trim() || "Moments";
     activeRenderMeta = {
       usedNarration: enableNarration,
+      title_line_1: titleLine1,
+      title_line_2: titleLine2,
+      output_width: parseInt(outputWidthInput.value) || 1920,
+      output_height: parseInt(outputHeightInput.value) || 1080,
     };
     statusText.textContent = "running (0%)";
     jobText.textContent = `Job ${jobId}`;
@@ -1086,6 +1219,60 @@ if (checkCreditsBtn) {
 if (openBuyCreditsTabBtn) {
   openBuyCreditsTabBtn.addEventListener("click", () => {
     openBuyCreditsModal(3);
+  });
+}
+
+if (previewVoiceBtn) {
+  // Reuse a single Audio instance to avoid stacking playbacks
+  let previewAudio = null;
+
+  previewVoiceBtn.addEventListener("click", async () => {
+    const selectedVoiceId = voiceIdInput.value.trim();
+    if (!selectedVoiceId) {
+      alert("Please select a voice first.");
+      return;
+    }
+
+    // Stop any currently playing preview
+    if (previewAudio) {
+      previewAudio.pause();
+      previewAudio.currentTime = 0;
+    }
+
+    previewVoiceBtn.disabled = true;
+    previewVoiceBtn.textContent = "Loading...";
+
+    try {
+      // Static pre-generated file — no API call at runtime
+      const url = `/api/voice-preview/${encodeURIComponent(selectedVoiceId)}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Preview not available for this voice");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      previewAudio = new Audio(audioUrl);
+      previewVoiceBtn.textContent = "Playing...";
+      previewAudio.addEventListener("ended", () => {
+        previewVoiceBtn.disabled = false;
+        previewVoiceBtn.textContent = "Preview Voice";
+      });
+      previewAudio.play().catch((err) => {
+        console.error("Failed to play audio:", err);
+        previewVoiceBtn.disabled = false;
+        previewVoiceBtn.textContent = "Preview Voice";
+      });
+
+    } catch (error) {
+      console.error("Voice preview error:", error);
+      alert(`Voice preview: ${error.message}`);
+      previewVoiceBtn.disabled = false;
+      previewVoiceBtn.textContent = "Preview Voice";
+    }
   });
 }
 
@@ -1183,6 +1370,7 @@ const existingToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 if (existingToken) {
   getTokenInput().value = existingToken;
   refreshTokenCreditsUI(existingToken);
+  loadRenderHistory(existingToken);
 }
 
 getTokenInput().addEventListener("change", () => {
@@ -1191,12 +1379,17 @@ getTokenInput().addEventListener("change", () => {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     secureCreditsPromptDismissed = false;
     refreshTokenCreditsUI(token);
+    loadRenderHistory(token);
     return;
   }
   tokenCreditStatus.textContent = "Credits: unknown";
   setAccountBillingStatus(null);
   if (linkEmailStatus) {
     linkEmailStatus.textContent = "";
+  }
+  if (renderHistory) {
+    renderHistory.innerHTML = "";
+    renderHistory.hidden = true;
   }
   updateActionCreditUsage();
 });
@@ -1210,8 +1403,9 @@ fetchBillingConfig()
     }
     if (freeTrialHint) {
       const freeCredits = Number(config.free_trial_credits || 0);
+      const wordsPerCredit = Math.max(1, Number(config.narration_words_per_credit || 30));
       freeTrialHint.textContent = freeCredits > 0
-        ? `Free Trial: first ${freeCredits} uses are free (if available for your account/IP). ElevenLabs narration still needs credits.`
+        ? `Free Trial: first ${freeCredits} uses are free (if available for your account/IP). ElevenLabs narration is billed at 1 credit per ${wordsPerCredit} words.`
         : "Free Trial: no free uses currently configured.";
     }
     if (Number(config.free_trial_credits || 0) > 0) {
@@ -1227,6 +1421,11 @@ fetchBillingConfig()
         openRecoveryModalLink.textContent = "Email recovery unavailable";
         openRecoveryModalLink.style.pointerEvents = "none";
         openRecoveryModalLink.style.opacity = "0.45";
+      }
+      if (openRecoveryModalBannerLink) {
+        openRecoveryModalBannerLink.textContent = "Email recovery unavailable";
+        openRecoveryModalBannerLink.style.pointerEvents = "none";
+        openRecoveryModalBannerLink.style.opacity = "0.45";
       }
     }
     if (!config.stripe_configured && buyOneCreditBtn) {
@@ -1294,6 +1493,29 @@ fetch("/api/app-config")
     const selected = outputPreset.value.split("x");
     outputWidthInput.value = selected[0];
     outputHeightInput.value = selected[1];
+
+    if (voiceIdInput) {
+      const voiceOptions = Array.isArray(cfg.voice_options) ? cfg.voice_options : [];
+      const defaultVoiceId = String(cfg.default_voice_id || "").trim();
+      voiceIdInput.innerHTML = "";
+
+      const defaultOpt = document.createElement("option");
+      defaultOpt.value = "";
+      defaultOpt.textContent = "Default Voice";
+      voiceIdInput.appendChild(defaultOpt);
+
+      voiceOptions.forEach((voice) => {
+        if (!voice || !voice.id) return;
+        const opt = document.createElement("option");
+        opt.value = voice.id;
+        opt.textContent = voice.label || voice.id;
+        if (defaultVoiceId && voice.id === defaultVoiceId) {
+          opt.selected = true;
+        }
+        voiceIdInput.appendChild(opt);
+      });
+    }
+
     renderClipGallery();
     refreshSelectedUploadSize();
   })
@@ -1301,6 +1523,8 @@ fetch("/api/app-config")
     uploadLimitNote.textContent = "Upload limit: unavailable";
     log(`App config unavailable: ${error.message}`);
   });
+
+checkForAppUpdate();
 
 clipPickerInput.addEventListener("change", () => {
   addSelectedFiles(clipPickerInput.files || []);
@@ -1373,6 +1597,7 @@ const useIntermissionsCheckbox = document.getElementById("useIntermissions");
 if (useIntermissionsCheckbox) {
   useIntermissionsCheckbox.addEventListener("change", () => {
     markFinalRenderDirty();
+    syncIntermissionUI();
     updateIntermissionPreview();
     schedulePreviewUpdate();
   });
@@ -1425,24 +1650,6 @@ if (enableNarrationInput) {
     schedulePreviewUpdate();
   });
 }
-
-[narrationModeOwned, narrationModeHosted].forEach((input) => {
-  if (!input) {
-    return;
-  }
-  input.addEventListener("change", () => {
-    markFinalRenderDirty();
-    updateNarrationBillingUI();
-
-    if (input === narrationModeHosted && narrationModeHosted && narrationModeHosted.checked) {
-      const estimate = getNarrationCreditEstimate();
-      const { paidCredits } = getAvailableCreditsSnapshot();
-      if (paidCredits < estimate.creditCost) {
-        openBuyCreditsModal(estimate.creditCost);
-      }
-    }
-  });
-});
 
 if (clipSliderPrev) {
   clipSliderPrev.addEventListener("click", () => {
@@ -1556,6 +1763,14 @@ async function generatePreview() {
   const titleLine2 = document.getElementById("titleLine2").value.trim() || "Moments";
   const useIntermissions = document.getElementById("useIntermissions").checked;
   const intermissionOpacity = Number(document.getElementById("intermissionOpacity").value);
+  const includeMusicChecked = Boolean(includeMusic && includeMusic.checked);
+  const backgroundMusicFile = document.getElementById("backgroundMusic").files[0];
+  const musicLevel = includeMusicChecked ? Number(musicLevelInput.value) / 100 : 0.15;
+
+  if (previewVideo.hidden && selectedClips[0]?.objectUrl) {
+    previewVideo.src = selectedClips[0].objectUrl;
+    previewVideo.hidden = false;
+  }
 
   const payload = new FormData();
   payload.append("title_line_1", titleLine1);
@@ -1568,8 +1783,13 @@ async function generatePreview() {
   payload.append("list_font_size", listFontSizeInput.value);
   payload.append("use_intermissions", useIntermissions ? "true" : "false");
   payload.append("intermission_opacity", String(intermissionOpacity));
+  payload.append("include_music", includeMusicChecked ? "true" : "false");
+  payload.append("background_music_level", String(musicLevel));
   payload.append("captions_json", JSON.stringify(selectedClips.map((clip) => clip.caption || clip.title)));
   selectedClips.forEach((clip) => payload.append("clips", clip.file));
+  if (includeMusicChecked && backgroundMusicFile) {
+    payload.append("background_music", backgroundMusicFile);
+  }
 
   let jobId;
   try {
@@ -1605,9 +1825,13 @@ async function generatePreview() {
     previewProgressBar.style.width = "100%";
     if (data.output_file) {
       previewVideo.src = `/outputs/${encodeURIComponent(data.output_file)}?t=${Date.now()}`;
+      previewVideo.currentTime = 0;
+      previewVideo.load();
       previewVideo.hidden = false;
     }
-    previewStatus.textContent = "ElevenLabs narration applies on final render only.";
+    previewStatus.textContent = includeMusicChecked
+      ? "Preview ready. Audio playback reflects your background music mix. ElevenLabs narration still applies on final render only."
+      : "Preview ready. ElevenLabs narration still applies on final render only.";
     setTimeout(() => {
       previewProgressWrap.hidden = true;
       previewStatusBar.hidden = true;
@@ -1656,6 +1880,18 @@ function updateIntermissionPreview() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+function syncIntermissionUI() {
+  const intermissionsEnabled = Boolean(useIntermissionsCheckbox && useIntermissionsCheckbox.checked);
+
+  if (intermissionPreviewRow) {
+    intermissionPreviewRow.hidden = !intermissionsEnabled;
+  }
+
+  if (intermissionOpacityWrap) {
+    intermissionOpacityWrap.hidden = !intermissionsEnabled;
+  }
+}
+
 function initCaptionGuide() {
   const captionGuide = document.getElementById("captionGuide");
   const dismissBtn = document.getElementById("dismissCaptionGuideBtn");
@@ -1673,6 +1909,7 @@ function initCaptionGuide() {
 }
 
 renderClipGallery();
+syncIntermissionUI();
 updateIntermissionPreview();
 initCaptionGuide();
 updateNarrationBillingUI();
@@ -1692,6 +1929,16 @@ function showAccessCodeBanner(token, isNew = true) {
     accessCodeBanner.classList.remove("is-new-token");
   }
   accessCodeBanner.hidden = false;
+}
+
+function openRecoveryModalFromLink(event) {
+  event.preventDefault();
+  openRecoveryModal();
+}
+
+function openRestoreCodeFromLink(event) {
+  event.preventDefault();
+  openRestoreCodeSection();
 }
 
 if (copyAccessCodeBtn) {
@@ -1798,10 +2045,11 @@ if (sendRecoveryBtn) {
 }
 
 if (openRecoveryModalLink) {
-  openRecoveryModalLink.addEventListener("click", (e) => {
-    e.preventDefault();
-    openRecoveryModal();
-  });
+  openRecoveryModalLink.addEventListener("click", openRecoveryModalFromLink);
+}
+
+if (openRecoveryModalBannerLink) {
+  openRecoveryModalBannerLink.addEventListener("click", openRecoveryModalFromLink);
 }
 
 function openRestoreCodeSection() {
@@ -1815,17 +2063,19 @@ function openRestoreCodeSection() {
 }
 
 if (openRestoreCodeLink) {
-  openRestoreCodeLink.addEventListener("click", (e) => {
-    e.preventDefault();
-    openRestoreCodeSection();
-  });
+  openRestoreCodeLink.addEventListener("click", openRestoreCodeFromLink);
+}
+
+if (openRestoreCodeBannerLink) {
+  openRestoreCodeBannerLink.addEventListener("click", openRestoreCodeFromLink);
 }
 
 if (openRestoreCodeInlineLink) {
-  openRestoreCodeInlineLink.addEventListener("click", (e) => {
-    e.preventDefault();
-    openRestoreCodeSection();
-  });
+  openRestoreCodeInlineLink.addEventListener("click", openRestoreCodeFromLink);
+}
+
+if (openRestoreCodeModalLink) {
+  openRestoreCodeModalLink.addEventListener("click", openRestoreCodeFromLink);
 }
 
 if (applyRestoreCodeBtn) {

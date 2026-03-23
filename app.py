@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import smtplib
 import sys
@@ -10,12 +11,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+import requests
 import stripe
 from werkzeug.utils import secure_filename
 
 from src.billing import BillingStore
 from src.job_manager import JobManager
 from src.models import ClipInput, RenderSettings
+from src.render_history import RenderHistory
 from src.token_service import create_paid_access_token, is_valid_paid_access_token
 from src.utils import get_resource_root, get_runtime_root
 
@@ -27,9 +30,10 @@ APP_ROOT = RESOURCE_ROOT
 WORKSPACE = RUNTIME_ROOT / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 OUTPUTS = WORKSPACE / "outputs"
+RENDER_HISTORY_FILE = Path(os.environ.get("RENDER_HISTORY_FILE", str(WORKSPACE / "render_history.json")))
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "4096"))
 MAX_OUTPUT_DIMENSION = int(os.environ.get("MAX_OUTPUT_DIMENSION", "4096"))
-ALLOW_SHARED_ELEVENLABS_KEY = os.environ.get("ALLOW_SHARED_ELEVENLABS_KEY", "false").lower() == "true"
+ALLOW_SHARED_ELEVENLABS_KEY = os.environ.get("ALLOW_SHARED_ELEVENLABS_KEY", "true").lower() == "true"
 REQUIRE_PAYMENT_FOR_SHARED_KEY = os.environ.get("REQUIRE_PAYMENT_FOR_SHARED_KEY", "true").lower() == "true"
 SHARED_KEY_RENDER_PRICE_CREDITS = int(os.environ.get("SHARED_KEY_RENDER_PRICE_CREDITS", "1"))
 ADMIN_BILLING_KEY = os.environ.get("ADMIN_BILLING_KEY", "")
@@ -53,16 +57,29 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.3.0").strip()
+APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
+APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
 
 VIDEO_RENDER_PRICE_CREDITS = max(1, int(os.environ.get("VIDEO_RENDER_PRICE_CREDITS", "1")))
-NARRATION_CHARS_PER_CREDIT = max(1, int(os.environ.get("NARRATION_CHARS_PER_CREDIT", "1000")))
+NARRATION_WORDS_PER_CREDIT = max(1, int(os.environ.get("NARRATION_WORDS_PER_CREDIT", "30")))
 ALLOWED_VIDEO_EXTENSIONS = {"mp4", "mov", "mkv", "webm"}
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac"}
 CLIP_MIN = int(os.environ.get("CLIP_MIN", "3"))
 CLIP_MAX = int(os.environ.get("CLIP_MAX", "10"))
+DEFAULT_ELEVENLABS_VOICE_ID = (os.environ.get("ELEVENLABS_VOICE_ID") or "").strip()
+ELEVENLABS_VOICE_OPTIONS_JSON = (os.environ.get("ELEVENLABS_VOICE_OPTIONS_JSON") or "").strip()
+
+DEFAULT_ELEVENLABS_VOICE_OPTIONS = [
+    {"id": "JBFqnCBsd6RMkjVDRZzb", "label": "George"},
+    {"id": "9BWtsMINqrJLrRacOk9x", "label": "Aria"},
+    {"id": "EXAVITQu4vr4xnSDxMaL", "label": "Sarah"},
+    {"id": "TX3LPaxmHKxFdv7VOQHJ", "label": "Liam"},
+]
 
 job_manager = JobManager(WORKSPACE)
+render_history = RenderHistory(RENDER_HISTORY_FILE)
 billing_store = BillingStore(BILLING_TOKENS_FILE, BILLING_AUDIT_FILE)
 
 if STRIPE_SECRET_KEY:
@@ -84,11 +101,67 @@ def _save_upload(file_storage, target_dir: Path, prefix: str) -> Path:
     return dst
 
 
+def _count_words(text: str) -> int:
+    return len([token for token in text.strip().split() if token])
+
+
+def _calculate_narration_credit_cost(captions: list[str]) -> tuple[int, int]:
+    words = sum(_count_words(caption) for caption in captions)
+    billable_words = max(1, words)
+    credits = max(1, math.ceil(billable_words / NARRATION_WORDS_PER_CREDIT))
+    return words, credits
+
+
+def _get_voice_options() -> list[dict]:
+    if not ELEVENLABS_VOICE_OPTIONS_JSON:
+        return DEFAULT_ELEVENLABS_VOICE_OPTIONS
+
+    try:
+        parsed = json.loads(ELEVENLABS_VOICE_OPTIONS_JSON)
+    except json.JSONDecodeError:
+        return DEFAULT_ELEVENLABS_VOICE_OPTIONS
+
+    if not isinstance(parsed, list):
+        return DEFAULT_ELEVENLABS_VOICE_OPTIONS
+
+    options: list[dict] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        voice_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or voice_id).strip()
+        if voice_id:
+            options.append({"id": voice_id, "label": label})
+
+    return options or DEFAULT_ELEVENLABS_VOICE_OPTIONS
+
+
 def _get_client_ip() -> str:
     forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
     if forwarded:
         return forwarded.split(",")[0].strip() or "unknown"
     return (request.remote_addr or "unknown").strip()
+
+
+def _parse_version(version: str) -> tuple[int, ...]:
+    cleaned = (version or "").strip().lower().lstrip("v")
+    if not cleaned:
+        return (0,)
+
+    parts: list[int] = []
+    for segment in cleaned.split("."):
+        digits = "".join(ch for ch in segment if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts) if parts else (0,)
+
+
+def _is_newer_version(latest: str, current: str) -> bool:
+    latest_parts = list(_parse_version(latest))
+    current_parts = list(_parse_version(current))
+    length = max(len(latest_parts), len(current_parts))
+    latest_parts.extend([0] * (length - len(latest_parts)))
+    current_parts.extend([0] * (length - len(current_parts)))
+    return tuple(latest_parts) > tuple(current_parts)
 
 
 def _get_claim_key() -> str:
@@ -295,6 +368,8 @@ def create_app() -> Flask:
                 return jsonify({"error": f"Caption {index} cannot be empty"}), 400
             clip_inputs.append(ClipInput(file_path=saved, caption=caption_text))
 
+        narration_word_count, narration_credit_cost = _calculate_narration_credit_cost([clip.caption for clip in clip_inputs])
+
         background_music = None
         music_file = request.files.get("background_music")
         if include_music and music_file and music_file.filename:
@@ -318,28 +393,28 @@ def create_app() -> Flask:
             enable_narration=enable_narration,
             use_intermissions=use_intermissions,
             intermission_opacity=intermission_opacity,
-            elevenlabs_api_key=(request.form.get("elevenlabs_api_key") or "").strip() or None,
+            elevenlabs_api_key=None,
             elevenlabs_voice_id=(request.form.get("elevenlabs_voice_id") or "").strip() or None,
         )
 
         charged_token = None
+        charged_credits = 0
         consumed_free_trial_token = None
         if settings.enable_narration:
-            has_user_key = bool(settings.elevenlabs_api_key)
             has_server_key = bool(os.environ.get("ELEVENLABS_API_KEY", ""))
-            if not has_user_key and not (ALLOW_SHARED_ELEVENLABS_KEY and has_server_key):
+            if not (ALLOW_SHARED_ELEVENLABS_KEY and has_server_key):
                 return jsonify(
                     {
-                        "error": "Narration requires an ElevenLabs API key. Provide elevenlabs_api_key per request, or explicitly enable ALLOW_SHARED_ELEVENLABS_KEY on your own private server."
+                        "error": "Narration is currently unavailable because the server-hosted ElevenLabs key is not configured."
                     }
                 ), 400
 
-            if not has_user_key and ALLOW_SHARED_ELEVENLABS_KEY and has_server_key and REQUIRE_PAYMENT_FOR_SHARED_KEY:
+            if REQUIRE_PAYMENT_FOR_SHARED_KEY:
                 paid_token = (request.form.get("paid_access_token") or "").strip()
                 if not paid_token:
                     return jsonify(
                         {
-                            "error": "A paid_access_token is required for server-key narration."
+                            "error": "A paid_access_token is required for narration."
                         }
                     ), 402
 
@@ -348,18 +423,20 @@ def create_app() -> Flask:
 
                 consumed, remaining = billing_store.consume_credits(
                     token=paid_token,
-                    cost=SHARED_KEY_RENDER_PRICE_CREDITS,
-                    source="shared_key_render",
+                    cost=narration_credit_cost,
+                    source="shared_key_narration_words",
                 )
                 if not consumed:
                     return jsonify(
                         {
                             "error": "Insufficient token credits for narration.",
-                            "required_credits": SHARED_KEY_RENDER_PRICE_CREDITS,
+                            "required_credits": narration_credit_cost,
                             "remaining_credits": remaining,
+                            "narration_words": narration_word_count,
                         }
                     ), 402
                 charged_token = paid_token
+                charged_credits = narration_credit_cost
         else:
             access_token = (request.form.get("paid_access_token") or "").strip()
             if access_token and is_valid_paid_access_token(access_token):
@@ -377,7 +454,7 @@ def create_app() -> Flask:
             if charged_token:
                 billing_store.add_credits(
                     token=charged_token,
-                    credits=SHARED_KEY_RENDER_PRICE_CREDITS,
+                    credits=charged_credits,
                     source="shared_key_render_refund_enqueue_failure",
                 )
             if consumed_free_trial_token:
@@ -394,6 +471,8 @@ def create_app() -> Flask:
     def generate_preview():
         title_line_1 = (request.form.get("title_line_1") or "Top 5 Funniest").strip()
         title_line_2 = (request.form.get("title_line_2") or "Moments").strip()
+        include_music = (request.form.get("include_music") or "").lower() == "true"
+        background_music_level_raw = (request.form.get("background_music_level") or "0.15").strip()
         output_width_raw = (request.form.get("output_width") or "1440").strip()
         output_height_raw = (request.form.get("output_height") or "2560").strip()
         title_font_family = (request.form.get("title_font_family") or "gill-sans-ultra-bold").strip() or "gill-sans-ultra-bold"
@@ -409,8 +488,9 @@ def create_app() -> Flask:
             title_font_size = int(title_font_size_raw)
             list_font_size = int(list_font_size_raw)
             intermission_opacity = float(intermission_opacity_raw)
+            background_music_level = float(background_music_level_raw)
         except ValueError:
-            return jsonify({"error": "Dimension, font, and opacity values must be numeric"}), 400
+            return jsonify({"error": "Dimension, font, opacity, and music values must be numeric"}), 400
 
         if output_width < 360 or output_height < 360:
             return jsonify({"error": "output dimensions must be at least 360 pixels"}), 400
@@ -442,6 +522,13 @@ def create_app() -> Flask:
             caption_text = str(captions[index - 1]).strip() if index <= len(captions) else f"Clip {index}"
             clip_inputs.append(ClipInput(file_path=saved, caption=caption_text))
 
+        background_music = None
+        music_file = request.files.get("background_music")
+        if include_music and music_file and music_file.filename:
+            if not _allowed(music_file.filename, ALLOWED_AUDIO_EXTENSIONS):
+                return jsonify({"error": "Background music has an invalid extension"}), 400
+            background_music = _save_upload(music_file, clip_upload_root, "music")
+
         settings = RenderSettings(
             title_line_1=title_line_1,
             title_line_2=title_line_2,
@@ -453,8 +540,9 @@ def create_app() -> Flask:
             title_font_size=title_font_size,
             list_font_size=list_font_size,
             fps=30,
-            include_music=False,
-            background_music=None,
+            include_music=include_music,
+            background_music=background_music,
+            background_music_level=background_music_level,
             enable_narration=False,
             use_intermissions=use_intermissions,
             intermission_opacity=intermission_opacity,
@@ -497,8 +585,92 @@ def create_app() -> Flask:
                     {"label": "16:19 (1440x1710)", "width": 1440, "height": 1710},
                     {"label": "4:5 (1440x1800)", "width": 1440, "height": 1800},
                 ],
+                "voice_options": _get_voice_options(),
+                "default_voice_id": DEFAULT_ELEVENLABS_VOICE_ID,
+                "desktop_shell": os.environ.get("VIDEOFORGE_DESKTOP_SHELL", "") or None,
             }
         )
+
+    @app.get("/api/app-update")
+    def app_update_status():
+        if not APP_UPDATE_ENABLED:
+            return jsonify(
+                {
+                    "enabled": False,
+                    "current_version": APP_VERSION,
+                    "update_available": False,
+                }
+            )
+
+        latest_url = f"https://api.github.com/repos/{APP_UPDATE_REPO}/releases/latest"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"{APP_NAME}/{APP_VERSION}",
+        }
+
+        try:
+            response = requests.get(latest_url, headers=headers, timeout=8)
+        except requests.RequestException as exc:
+            return jsonify(
+                {
+                    "enabled": True,
+                    "current_version": APP_VERSION,
+                    "update_available": False,
+                    "error": f"Update check failed: {str(exc)}",
+                }
+            ), 200
+
+        if response.status_code != 200:
+            return jsonify(
+                {
+                    "enabled": True,
+                    "current_version": APP_VERSION,
+                    "update_available": False,
+                    "error": f"Update check returned HTTP {response.status_code}",
+                }
+            ), 200
+
+        payload = response.json() if response.content else {}
+        latest_version = str(payload.get("tag_name") or "").strip()
+        release_url = str(payload.get("html_url") or "").strip()
+        download_url = ""
+        for asset in payload.get("assets") or []:
+            asset_url = str(asset.get("browser_download_url") or "").strip()
+            name = str(asset.get("name") or "").strip().lower()
+            if asset_url and name.endswith(".exe"):
+                download_url = asset_url
+                break
+            if asset_url and not download_url:
+                download_url = asset_url
+
+        update_available = bool(latest_version) and _is_newer_version(latest_version, APP_VERSION)
+        return jsonify(
+            {
+                "enabled": True,
+                "repo": APP_UPDATE_REPO,
+                "current_version": APP_VERSION,
+                "latest_version": latest_version or APP_VERSION,
+                "update_available": update_available,
+                "release_url": release_url,
+                "download_url": download_url,
+                "published_at": payload.get("published_at"),
+            }
+        )
+
+    @app.get("/api/voice-preview/<voice_id>")
+    def voice_preview(voice_id: str):
+        """Serve a pre-generated static voice preview MP3. No API call at runtime."""
+        voice_id = secure_filename(voice_id.strip())
+        if not voice_id:
+            return jsonify({"error": "voice_id is required"}), 400
+
+        preview_dir = RESOURCE_ROOT / "static" / "voice-previews"
+        preview_file = preview_dir / f"{voice_id}.mp3"
+
+        if not preview_file.exists():
+            return jsonify({"error": "Preview not available for this voice. Run generate_voice_previews.py to create it."}), 404
+
+        return send_from_directory(preview_dir, f"{voice_id}.mp3", mimetype="audio/mpeg")
 
     @app.get("/api/jobs/<job_id>")
     def get_job(job_id: str):
@@ -530,7 +702,7 @@ def create_app() -> Flask:
     @app.get("/outputs/<filename>")
     def download_output(filename: str):
         safe = secure_filename(filename)
-        return send_from_directory(OUTPUTS, safe, as_attachment=True)
+        return send_from_directory(OUTPUTS, safe, as_attachment=False)
 
     @app.get("/health")
     def health():
@@ -544,7 +716,7 @@ def create_app() -> Flask:
                 "shared_key_requires_payment": REQUIRE_PAYMENT_FOR_SHARED_KEY,
                 "shared_key_render_price_credits": SHARED_KEY_RENDER_PRICE_CREDITS,
                 "video_render_price_credits": VIDEO_RENDER_PRICE_CREDITS,
-                "narration_chars_per_credit": NARRATION_CHARS_PER_CREDIT,
+                "narration_words_per_credit": NARRATION_WORDS_PER_CREDIT,
                 "free_trial_credits": FREE_TRIAL_CREDITS,
                 "free_trial_claim_scope": "ip",
                 "stripe_configured": bool(STRIPE_SECRET_KEY),
@@ -895,6 +1067,64 @@ def create_app() -> Flask:
 
         status = billing_store.get_status(token)
         return jsonify({"token": token, **status})
+
+    @app.post("/api/renders/save")
+    def save_render_to_history():
+        """Save a completed render to the user's render history by access code."""
+        payload = request.get_json(silent=True) or {}
+
+        def _value(name: str, default: str = "") -> str:
+            if name in payload and payload.get(name) is not None:
+                return str(payload.get(name)).strip()
+            return (request.form.get(name) or default).strip()
+
+        token = _value("token")
+        output_filename = _value("output_filename")
+        title_line_1 = _value("title_line_1", "Render")
+        title_line_2 = _value("title_line_2")
+        used_narration_raw = payload.get("used_narration") if "used_narration" in payload else request.form.get("used_narration")
+        used_narration = str(used_narration_raw or "").lower() == "true"
+
+        width_raw = payload.get("output_width") if "output_width" in payload else request.form.get("output_width", "1920")
+        height_raw = payload.get("output_height") if "output_height" in payload else request.form.get("output_height", "1080")
+
+        try:
+            output_width = int(str(width_raw or "1920"))
+            output_height = int(str(height_raw or "1080"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "output_width and output_height must be integers"}), 400
+
+        if not token or not is_valid_paid_access_token(token):
+            return jsonify({"error": "valid token is required"}), 400
+        if not output_filename:
+            return jsonify({"error": "output_filename is required"}), 400
+
+        try:
+            render_history.save_render(
+                access_code=token,
+                output_filename=output_filename,
+                title_line_1=title_line_1,
+                title_line_2=title_line_2,
+                used_narration=used_narration,
+                output_width=output_width,
+                output_height=output_height,
+            )
+            return jsonify({"ok": True, "message": "Render saved to history"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.get("/api/renders/list")
+    def list_user_renders():
+        """Retrieve all renders for an access code."""
+        token = (request.args.get("token") or "").strip()
+        if not token or not is_valid_paid_access_token(token):
+            return jsonify({"error": "valid token is required"}), 400
+
+        try:
+            renders = render_history.get_renders(token)
+            return jsonify({"renders": renders, "count": len(renders)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     return app
 

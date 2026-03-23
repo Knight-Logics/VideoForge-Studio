@@ -33,12 +33,12 @@ body {
 
 .app-shell {
   position: relative;
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 32px 18px 40px;
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  grid-template-rows: auto auto auto;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto;
   gap: 18px;
 }
 
@@ -51,6 +51,39 @@ body {
   backdrop-filter: blur(8px);
   background: linear-gradient(130deg, rgba(9, 28, 48, 0.95), rgba(9, 28, 48, 0.55));
   animation: float-in 400ms ease-out;
+}
+
+.hero-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hero-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+
+.app-icon-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.hero-top-right {
+  flex: 0 0 auto;
 }
 
 .kicker {
@@ -68,6 +101,11 @@ body {
   letter-spacing: 0.09em;
 }
 
+.built-by-text {
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
 .brand-logo {
   width: 22px;
   height: 22px;
@@ -76,7 +114,7 @@ body {
 }
 
 .hero h1 {
-  margin: 8px 0;
+  margin: 0;
   font-family: "Space Grotesk", sans-serif;
   font-size: clamp(1.8rem, 4vw, 3.2rem);
 }
@@ -85,6 +123,33 @@ body {
   margin: 0;
   color: var(--muted);
   max-width: 80ch;
+}
+
+.update-banner {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.86rem;
+  padding: 10px 12px;
+  border: 1px solid rgba(138, 184, 237, 0.22);
+  border-radius: 10px;
+  background: rgba(11, 42, 72, 0.38);
+}
+
+.update-banner.is-available {
+  border-color: rgba(64, 224, 183, 0.5);
+  background: rgba(16, 62, 53, 0.35);
+}
+
+.update-banner a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.update-banner a:hover {
+  text-decoration: underline;
 }
 
 .panel {
@@ -101,16 +166,86 @@ body {
   font-family: "Space Grotesk", sans-serif;
 }
 
-.form-panel {
-  grid-column: 1;
+.workflow-columns {
+  grid-column: 1 / -1;
   grid-row: 2;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+  align-items: start;
 }
 
-.preview-panel {
-  grid-column: 2;
-  grid-row: 2;
+.workflow-columns .panel {
+  min-width: 0;
+  height: 100%;
+}
+
+.setup-column-content {
   display: flex;
   flex-direction: column;
+}
+
+.subsection-title {
+  margin: 12px 0 10px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.25rem;
+}
+
+.narration-panel,
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.narration-column-card,
+.preview-actions-card {
+  border: 1px solid rgba(140, 180, 230, 0.25);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.narration-column-card h3 {
+  margin: 0 0 8px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.narration-column-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.narration-controls-row {
+  margin-top: 12px;
+}
+
+.voice-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+.voice-controls label select {
+  width: 100%;
+}
+
+.voice-controls button {
+  width: 100%;
+  padding: 10px 16px;
+}
+
+.credits-help-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(138, 184, 237, 0.2);
 }
 
 .preview-container {
@@ -159,6 +294,12 @@ body {
   border-top: 1px solid rgba(138, 184, 237, 0.2);
 }
 
+.render-actions-block {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(138, 184, 237, 0.2);
+}
+
 .render-status-block h3 {
   margin: 0 0 10px;
   font-family: "Space Grotesk", sans-serif;
@@ -166,7 +307,7 @@ body {
 }
 
 .row {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .two-col {
@@ -216,12 +357,32 @@ body {
 }
 
 .clip-card {
+  position: relative;
   border: 1px solid rgba(140, 180, 230, 0.25);
   border-radius: 12px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.03);
   min-width: 0;
   scroll-snap-align: start;
+}
+
+.clip-index-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(7, 19, 31, 0.9);
+  border: 1px solid rgba(50, 215, 162, 0.45);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
 }
 
 .clip-card video {
@@ -352,7 +513,7 @@ label {
 }
 
 .field-note {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 0.82rem;
   color: var(--muted);
 }
@@ -382,13 +543,27 @@ input[type="number"] {
 .toggle {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 8px;
   color: var(--text);
   border: 1px solid rgba(140, 180, 230, 0.3);
   border-radius: 10px;
-  padding: 12px;
+  padding: 8px 10px;
+  min-height: 40px;
   background: rgba(8, 19, 35, 0.92);
+}
+
+.toggle span {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.toggle input[type="checkbox"] {
+  margin-top: 1px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 
 button {
@@ -415,6 +590,10 @@ button:hover {
   justify-content: space-between;
   gap: 12px;
   margin-top: 8px;
+}
+
+.preview-action-row {
+  margin-top: 0;
 }
 
 .start-action-group {
@@ -508,10 +687,6 @@ button:hover {
   white-space: nowrap;
 }
 
-.centered-download {
-  margin: 10px auto 0;
-}
-
 .billing-actions {
   margin-top: 8px;
   display: flex;
@@ -581,6 +756,10 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.music-upload-label {
+  gap: 4px;
+}
+
 .final-exports-block {
   margin-top: 14px;
   padding-top: 14px;
@@ -608,11 +787,81 @@ button:hover {
 }
 
 .render-history {
-  margin-top: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  align-items: center;
+  gap: 8px;
+}
+
+.renders-history-header {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--accent);
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-item {
+  padding: 8px;
+  background: rgba(32, 90, 160, 0.08);
+  border: 1px solid rgba(50, 215, 162, 0.15);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.history-item-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.history-item-date {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.history-download-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(50, 215, 162, 0.1);
+  border: 1px solid rgba(50, 215, 162, 0.3);
+  display: inline-block;
+  width: fit-content;
+  transition: all 150ms ease;
+}
+
+.history-download-link:hover {
+  background: rgba(50, 215, 162, 0.2);
+  border-color: var(--accent);
+}
+
+.history-empty,
+.history-error {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 8px;
+}
+
+.history-error {
+  color: var(--danger);
 }
 
 .render-history a {
@@ -723,18 +972,15 @@ input[type="range"]::-moz-range-thumb {
 
 @media (max-width: 980px) {
   .app-shell {
+    grid-template-rows: auto auto;
+  }
+
+  .workflow-columns {
     grid-template-columns: 1fr;
-    grid-template-rows: auto;
   }
 
   .clip-gallery {
     grid-auto-columns: calc((100% - 12px) / 2);
-  }
-
-  .form-panel,
-  .preview-panel {
-    grid-column: auto;
-    grid-row: auto;
   }
 }
 
@@ -757,6 +1003,10 @@ input[type="range"]::-moz-range-thumb {
   .action-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .recovery-links-row {
+    align-items: flex-start;
   }
 
   .start-action-group {
@@ -885,6 +1135,21 @@ input[type="range"]::-moz-range-thumb {
 .recovery-link:hover {
   opacity: 1;
   color: var(--accent, #c8a44a);
+}
+
+.recovery-links-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.access-code-recovery-links {
+  margin-top: 8px;
+}
+
+.modal-credit-recovery-note {
+  margin-top: 10px;
 }
 
 /* ── Recovery modal overlay ─────────────────────────────────────────────── */

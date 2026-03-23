@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VideoForge Studio</title>
+  <link rel="icon" type="image/png" href="/static/app-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
@@ -13,261 +14,281 @@
   <div class="bg-grid"></div>
   <main class="app-shell">
     <section class="hero">
-      <p class="kicker brand-kicker">
-        <img src="/static/knightlogics-logo.png" alt="Knight Logics logo" class="brand-logo">
-          <span>Knight Logics | <a href="https://knightlogics.com" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:3px;">KnightLogics.com</a></span>
-      </p>
-      <h1>VideoForge Studio</h1>
-      <p class="subhead">Render ranked videos from variable uploads with animated overlays, optional ElevenLabs narration, word captions, intermissions, and final export.</p>
-    </section>
-
-    <section class="panel form-panel">
-      <h2>Render Setup</h2>
-
-      <form id="renderForm">
-        <div class="row two-col">
-          <label>
-            Title Line 1
-            <input type="text" id="titleLine1" value="Top 5 Funniest" required>
-          </label>
-          <label>
-            Title Line 2
-            <input type="text" id="titleLine2" value="Moments" required>
-          </label>
-        </div>
-
-        <div class="row three-col">
-          <label>
-            Output Preset
-            <select id="outputPreset"></select>
-          </label>
-          <label>
-            Width
-            <input type="number" id="outputWidth" min="360" max="4096" value="1440" required>
-          </label>
-          <label>
-            Height
-            <input type="number" id="outputHeight" min="360" max="4096" value="2560" required>
-          </label>
-        </div>
-
-        <div class="row two-col">
-          <label>
-            Title Font
-            <select id="titleFontFamily"></select>
-          </label>
-          <label>
-            List Font
-            <select id="listFontFamily"></select>
-          </label>
-        </div>
-
-        <div class="row two-col">
-          <label>
-            Title Font Size
-            <input type="number" id="titleFontSize" min="24" max="240" value="96" required>
-          </label>
-          <label>
-            List Font Size
-            <input type="number" id="listFontSize" min="20" max="180" value="56" required>
-          </label>
-        </div>
-
-        <div class="row">
-          <p class="field-note">Clip Upload</p>
-          <div class="clip-upload-controls">
-            <button type="button" id="openClipPickerBtn" class="secondary-btn">Add Clips</button>
-            <span class="field-note">You can add one or many, then add more later.</span>
+      <div class="hero-container">
+        <div class="hero-top">
+          <div class="hero-header">
+            <img src="/static/app-icon.png" alt="VideoForge Studio" class="app-icon-logo">
+            <h1>VideoForge Studio</h1>
           </div>
-          <input type="file" id="clipPicker" accept=".mp4,.mov,.mkv,.webm" multiple hidden>
-        </div>
-        <div class="row">
-          <div id="clipDropzone" class="clip-dropzone">Drop video files here or click Add Clips</div>
-        </div>
-        <p class="field-note" id="clipCountStatus">0 clips selected</p>
-        <p class="field-note" id="uploadLimitNote">Upload limit: loading...</p>
-        <p class="field-note" id="selectedUploadSize">Selected upload size: 0 MB</p>
-
-        <div class="row" id="captionGuide" hidden>
-          <div class="caption-guide">
-            <p class="caption-guide-title">Quick Guide: Clip Caption / Narration Text</p>
-            <p class="field-note">This text is used for the intermission caption on screen, and it is also spoken by ElevenLabs when narration is enabled.</p>
-            <button type="button" id="dismissCaptionGuideBtn" class="secondary-btn">Got it</button>
+          <div class="hero-top-right">
+            <p class="kicker brand-kicker">
+              <span class="built-by-text">Built By</span>
+              <img src="/static/knightlogics-logo.png" alt="Knight Logics logo" class="brand-logo">
+              <span>Knight Logics | <a href="https://knightlogics.com" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:3px;">KnightLogics.com</a></span>
+            </p>
           </div>
         </div>
-
-        <div class="row">
-          <div class="clip-gallery-shell">
-            <button type="button" id="clipSliderPrev" class="clip-slider-btn" aria-label="Previous clips" hidden>&lsaquo;</button>
-            <div class="clip-gallery-viewport" id="clipGalleryViewport">
-              <div class="clip-gallery" id="clipGallery"></div>
-            </div>
-            <button type="button" id="clipSliderNext" class="clip-slider-btn" aria-label="Next clips" hidden>&rsaquo;</button>
-          </div>
-        </div>
-
-        <p class="field-note narration-note">ElevenLabs narration is not included in Preview — it only applies on Start Render.</p>
-        <div class="row two-col toggles">
-          <label class="toggle">
-            <input type="checkbox" id="enableNarration">
-            <span>Enable ElevenLabs narration</span>
-          </label>
-          <label>
-            ElevenLabs Voice ID (optional)
-            <input type="text" id="voiceId" placeholder="leave blank to use ELEVENLABS_VOICE_ID">
-          </label>
-        </div>
-
-        <div class="row" id="narrationBillingPanel" hidden>
-          <div class="narration-mode-box">
-            <p class="narration-mode-title">Narration Access Mode</p>
-            <div class="narration-mode-options">
-              <label class="mode-option">
-                <input type="radio" name="narrationMode" id="narrationModeOwned" value="owned" checked>
-                <span>Use my own ElevenLabs key</span>
-              </label>
-              <label class="mode-option">
-                <input type="radio" name="narrationMode" id="narrationModeHosted" value="hosted">
-                <span>Use app credits</span>
-              </label>
-            </div>
-
-            <p class="field-note" id="narrationModeStatus">Current mode: Use my own ElevenLabs key. App credits are not charged.</p>
-            <p class="field-note" id="estimatedCreditCost">Estimated credit cost: 0 with current mode/settings.</p>
-
-            <div id="ownedKeySection">
-              <label>
-                Your ElevenLabs API Key
-                <input type="password" id="elevenApiKey" placeholder="paste your own ElevenLabs API key for this render">
-              </label>
-              <p class="field-note">Your key is used only for this request and is not stored by this app.</p>
-            </div>
-
-            <div id="hostedCreditsSection" hidden>
-              <input type="hidden" id="paidAccessToken">
-              <p class="field-note">App credits never expose the server key. If you need credits, use the Buy Credits button.</p>
-              <p class="field-note" id="tokenCreditStatus">Credits: loading...</p>
-              <p class="field-note" style="margin-top:6px">
-                <a href="#" id="openRecoveryModalLink" class="recovery-link">Lost access or switching devices? Recover by email</a>
-                &nbsp;&middot;&nbsp;
-                <a href="#" id="openRestoreCodeLink" class="recovery-link">Restore using a saved code</a>
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="row two-col toggles">
-          <label class="toggle">
-            <input type="checkbox" id="includeMusic">
-            <span>Mix background music</span>
-          </label>
-          <label>
-            Background Music (optional)
-            <input type="file" id="backgroundMusic" accept=".mp3,.wav,.m4a,.aac">
-          </label>
-        </div>
-
-        <div class="row" id="musicLevelRow" hidden>
-          <label>
-            Background Music Level
-            <div class="opacity-control-row">
-              <input type="range" id="musicLevel" min="0" max="100" value="15" step="1">
-              <span id="musicLevelValue">15%</span>
-            </div>
-          </label>
-          <p class="field-note">Adjust the volume of the background music relative to the video. Lower values make it more subtle in the mix.</p>
-        </div>
-
-        <div class="row two-col toggles">
-          <label class="toggle">
-            <input type="checkbox" id="useIntermissions" checked>
-            <span>Use intermissions between clips</span>
-          </label>
-          <label>
-            Intermission Opacity
-            <div class="opacity-control-row">
-              <input type="range" id="intermissionOpacity" min="0" max="100" value="100" step="5">
-              <span id="opacityValue">100%</span>
-            </div>
-          </label>
-        </div>
-
-        <div class="row">
-          <p class="field-note">Intermission Preview</p>
-          <div class="intermission-preview-container">
-            <canvas id="intermissionPreview" width="200" height="200" style="border: 1px solid #ccc; background-color: #000;"></canvas>
-            <p class="field-note">White video with selected opacity</p>
-          </div>
-        </div>
-
-        <div class="action-row">
-          <div class="start-action-group">
-            <button type="submit" id="submitBtn" class="primary-action">Start Render</button>
-            <p id="renderCreditUsage" class="field-note inline-credit-usage">Credits this render: calculating...</p>
-          </div>
-          <button type="button" id="openBuyCreditsTabBtn" class="secondary-btn">Buy Credits</button>
-        </div>
-        <p id="freeTrialHint" class="field-note action-help">Free Trial: first 3 uses are free (if available for your account/IP).</p>
-        <p id="creditBalanceHint" class="field-note action-help">Credits in your account: loading...</p>
-        <p id="restoreCreditsHelp" class="field-note action-help">
-          <a href="#" id="openRestoreCodeInlineLink" class="recovery-link">Restore credits using a saved access code</a>
-        </p>
-        <p id="startRenderHelp" class="field-note action-help">Start Render creates the final export. If ElevenLabs narration is enabled, narration is generated only during this step and may consume credits or API usage.</p>
-        <p id="renderProtectionNote" class="field-note protection-note" hidden></p>
-      </form>
-    </section>
-
-    <section class="panel preview-panel">
-      <h2>Preview</h2>
-      <div class="preview-container">
-        <div id="previewProgressWrap" class="preview-progress-wrap" hidden>
-          <div id="previewProgressBar" class="preview-progress-bar"></div>
-        </div>
-        <p id="previewStatusBar" class="field-note preview-status-bar" hidden></p>
-        <video id="previewVideo" controls preload="metadata" hidden></video>
-        <p id="previewStatus" class="field-note">Upload clips to auto-generate preview.</p>
-
-        <div class="render-status-block">
-          <h3>Render Status</h3>
-          <div class="progress-wrap">
-            <div class="progress-bar" id="progressBar"></div>
-          </div>
-          <div class="status-meta">
-            <p id="statusText">Idle</p>
-            <p id="jobText">No job running</p>
-          </div>
-          <pre id="logBox"></pre>
-        </div>
-
-        <div class="final-exports-block">
-          <h3>Final Exports</h3>
-          <p id="finalRenderSummary" class="field-note">No final render yet.</p>
-          <a id="downloadLink" class="download-link centered-download" href="#" hidden>Download Rendered Video</a>
-          <div class="access-code-section">
-            <!-- Access Code Banner: shown after a user has paid credits -->
-            <div id="accessCodeBanner" class="access-code-banner" hidden>
-              <div class="access-code-header">
-                <span class="access-code-icon">&#128273;</span>
-                <strong>Your Access Code</strong>
-                <span class="access-code-sub" id="accessCodeSub">This saves your free trial uses &amp; any paid credits</span>
-              </div>
-              <div class="access-code-row">
-                <code id="accessCodeDisplay" class="access-code-value"></code>
-                <button type="button" id="copyAccessCodeBtn" class="secondary-btn copy-code-btn">Copy</button>
-              </div>
-              <p class="field-note access-code-note">Keep this — if you clear your browser or switch devices, you&#8217;ll lose access without it.</p>
-              <div class="access-email-row" id="accessEmailRow" hidden>
-                <input type="email" id="accessEmailInput" class="access-email-input" placeholder="your@email.com">
-                <button type="button" id="linkEmailBtn" class="secondary-btn">Secure via Email</button>
-              </div>
-              <p class="field-note" id="linkEmailStatus"></p>
-              <p class="field-note access-code-dismiss-note">Link your email to get a confirmation, then recover your code anytime from any device.</p>
-            </div>
-          </div>
-          <div id="renderHistory" class="render-history" hidden></div>
+        <p class="subhead">Render ranked videos from variable uploads with animated overlays, optional ElevenLabs narration, word captions, intermissions, and final export.</p>
+        <div id="updateStatusBanner" class="update-banner" hidden>
+          <span id="updateStatusText">Checking for updates...</span>
+          <a id="updateDownloadLink" href="#" target="_blank" rel="noopener noreferrer" hidden>Download Update</a>
         </div>
       </div>
     </section>
+
+    <form id="renderForm" class="workflow-columns">
+      <section class="panel setup-panel">
+        <h2>Render Setup</h2>
+        <div class="setup-column-content">
+          <div class="row two-col">
+            <label>
+              Title Line 1
+              <input type="text" id="titleLine1" value="Top 5 Funniest" required>
+            </label>
+            <label>
+              Title Line 2
+              <input type="text" id="titleLine2" value="Moments" required>
+            </label>
+          </div>
+
+          <div class="row three-col">
+            <label>
+              Output Preset
+              <select id="outputPreset"></select>
+            </label>
+            <label>
+              Width
+              <input type="number" id="outputWidth" min="360" max="4096" value="1440" required>
+            </label>
+            <label>
+              Height
+              <input type="number" id="outputHeight" min="360" max="4096" value="2560" required>
+            </label>
+          </div>
+
+          <div class="row two-col">
+            <label>
+              Title Font
+              <select id="titleFontFamily"></select>
+            </label>
+            <label>
+              List Font
+              <select id="listFontFamily"></select>
+            </label>
+          </div>
+
+          <div class="row two-col">
+            <label>
+              Title Font Size
+              <input type="number" id="titleFontSize" min="24" max="240" value="96" required>
+            </label>
+            <label>
+              List Font Size
+              <input type="number" id="listFontSize" min="20" max="180" value="56" required>
+            </label>
+          </div>
+
+          <div class="row">
+            <p class="field-note">Clip Upload</p>
+            <div class="clip-upload-controls">
+              <button type="button" id="openClipPickerBtn" class="secondary-btn">Add Clips</button>
+              <span class="field-note">You can add one or many, then add more later.</span>
+            </div>
+            <input type="file" id="clipPicker" accept=".mp4,.mov,.mkv,.webm" multiple hidden>
+          </div>
+
+          <div class="row">
+            <div id="clipDropzone" class="clip-dropzone">Drop video files here or click Add Clips</div>
+          </div>
+          <p class="field-note" id="clipCountStatus">0 clips selected</p>
+          <p class="field-note" id="uploadLimitNote">Upload limit: loading...</p>
+          <p class="field-note" id="selectedUploadSize">Selected upload size: 0 MB</p>
+          <h2 class="subsection-title">Narration, Music & Render</h2>
+          <div class="narration-column-card">
+          <div class="row" id="captionGuide" hidden>
+            <div class="caption-guide">
+              <p class="caption-guide-title">Quick Guide: Clip Caption / Narration Text</p>
+              <p class="field-note">This text is used for the intermission caption on screen, and it is also spoken by ElevenLabs when narration is enabled.</p>
+              <button type="button" id="dismissCaptionGuideBtn" class="secondary-btn">Got it</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="clip-gallery-shell">
+              <button type="button" id="clipSliderPrev" class="clip-slider-btn" aria-label="Previous clips" hidden>&lsaquo;</button>
+              <div class="clip-gallery-viewport" id="clipGalleryViewport">
+                <div class="clip-gallery" id="clipGallery"></div>
+              </div>
+              <button type="button" id="clipSliderNext" class="clip-slider-btn" aria-label="Next clips" hidden>&rsaquo;</button>
+            </div>
+          </div>
+
+          <div class="row two-col toggles">
+            <label class="toggle">
+              <input type="checkbox" id="includeMusic">
+              <span>Add background music</span>
+            </label>
+            <label class="music-upload-label">
+              Background Music
+              <input type="file" id="backgroundMusic" accept=".mp3,.wav,.m4a,.aac">
+            </label>
+          </div>
+
+          <div class="row" id="musicLevelRow" hidden>
+            <label>
+              Background Music Level
+              <div class="opacity-control-row">
+                <input type="range" id="musicLevel" min="0" max="100" value="15" step="1">
+                <span id="musicLevelValue">15%</span>
+              </div>
+            </label>
+            <p class="field-note">Preview audio reflects this mix setting so you can hear the balance before final render.</p>
+          </div>
+
+          <div class="row two-col toggles">
+            <label class="toggle">
+              <input type="checkbox" id="useIntermissions">
+              <span>Use intermissions between clips</span>
+            </label>
+            <label id="intermissionOpacityWrap">
+              Intermission Opacity
+              <div class="opacity-control-row">
+                <input type="range" id="intermissionOpacity" min="0" max="100" value="100" step="5">
+                <span id="opacityValue">100%</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="row" id="intermissionPreviewRow">
+            <p class="field-note">Intermission Preview</p>
+            <div class="intermission-preview-container">
+              <canvas id="intermissionPreview" width="200" height="200" style="border: 1px solid #ccc; background-color: #000;"></canvas>
+              <p class="field-note">White video with selected opacity</p>
+            </div>
+          </div>
+
+          <p class="field-note narration-note">ElevenLabs narration stays final-render only, but preview now reflects your layout, clip order, and optional music mix.</p>
+
+          <div class="row two-col toggles narration-controls-row">
+            <label class="toggle">
+              <input type="checkbox" id="enableNarration">
+              <span>Enable ElevenLabs narration</span>
+            </label>
+            <div class="voice-controls">
+              <label>
+                Narration Voice
+                <select id="voiceId">
+                  <option value="" selected>Default Voice</option>
+                  <option value="JBFqnCBsd6RMkjVDRZzb">George</option>
+                  <option value="9BWtsMINqrJLrRacOk9x">Aria</option>
+                  <option value="EXAVITQu4vr4xnSDxMaL">Sarah</option>
+                  <option value="TX3LPaxmHKxFdv7VOQHJ">Liam</option>
+                </select>
+              </label>
+              <button type="button" id="previewVoiceBtn" class="secondary-btn">Preview Voice</button>
+            </div>
+          </div>
+
+          <div class="row" id="narrationBillingPanel" hidden>
+            <div class="narration-mode-box">
+              <p class="narration-mode-title">Narration Access Mode</p>
+              <p class="field-note" id="narrationModeStatus">Narration uses app-hosted ElevenLabs voices and charges credits based on total narration words.</p>
+              <p class="field-note" id="estimatedCreditCost">Estimated credit cost: 1 credit per 30 words of narration.</p>
+
+              <div id="hostedCreditsSection">
+                <input type="hidden" id="paidAccessToken">
+                <p class="field-note">Narration pricing: 1 credit per 30 words. Credits are rounded up per render.</p>
+                <p class="field-note" id="tokenCreditStatus">Credits: loading...</p>
+                <p class="field-note recovery-links-row">
+                  <a href="#" id="openRecoveryModalLink" class="recovery-link">Lost access or switching devices? Recover by email</a>
+                  <span>&middot;</span>
+                  <a href="#" id="openRestoreCodeLink" class="recovery-link">Restore using a saved code</a>
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="panel preview-panel">
+        <h2>Preview, Status & Exports</h2>
+        <div class="preview-container">
+          <div id="previewProgressWrap" class="preview-progress-wrap" hidden>
+            <div id="previewProgressBar" class="preview-progress-bar"></div>
+          </div>
+          <p id="previewStatusBar" class="field-note preview-status-bar" hidden></p>
+          <video id="previewVideo" controls preload="metadata" hidden></video>
+          <p id="previewStatus" class="field-note">Upload clips to auto-generate preview.</p>
+
+          <div class="render-status-block">
+            <h3>Render Status</h3>
+            <div class="progress-wrap">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="status-meta">
+              <p id="statusText">Idle</p>
+              <p id="jobText">No job running</p>
+            </div>
+            <pre id="logBox"></pre>
+          </div>
+
+          <div class="render-actions-block">
+            <div class="preview-actions-card">
+              <div class="action-row preview-action-row">
+                <div class="start-action-group">
+                  <button type="submit" id="submitBtn" class="primary-action" form="renderForm">Start Render</button>
+                  <p id="renderCreditUsage" class="field-note inline-credit-usage">Credits this render: calculating...</p>
+                </div>
+                <button type="button" id="openBuyCreditsTabBtn" class="secondary-btn">Buy Credits</button>
+              </div>
+              <p id="startRenderHelp" class="field-note action-help">Start Render creates the final export. If ElevenLabs narration is enabled, narration is generated only during this step and may consume credits or API usage.</p>
+              <p id="renderProtectionNote" class="field-note protection-note" hidden></p>
+              <div class="credits-help-block">
+                <p id="freeTrialHint" class="field-note action-help">Free Trial: first 3 uses are free (if available for your account/IP).</p>
+                <p id="creditBalanceHint" class="field-note action-help">Credits in your account: loading...</p>
+                <p id="restoreCreditsHelp" class="field-note action-help">
+                  <a href="#" id="openRestoreCodeInlineLink" class="recovery-link">Restore credits using a saved access code</a>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="final-exports-block">
+            <h3>Final Exports</h3>
+            <p id="finalRenderSummary" class="field-note">No final render yet.</p>
+            <a id="downloadLink" class="download-link centered-download" href="#" hidden>Download Rendered Video</a>
+            <div class="access-code-section">
+              <!-- Access Code Banner: shown after a user has paid credits -->
+              <div id="accessCodeBanner" class="access-code-banner" hidden>
+                <div class="access-code-header">
+                  <span class="access-code-icon">&#128273;</span>
+                  <strong>Your Access Code</strong>
+                  <span class="access-code-sub" id="accessCodeSub">This saves your free trial uses &amp; any paid credits</span>
+                </div>
+                <div class="access-code-row">
+                  <code id="accessCodeDisplay" class="access-code-value"></code>
+                  <button type="button" id="copyAccessCodeBtn" class="secondary-btn copy-code-btn">Copy</button>
+                </div>
+                <p class="field-note access-code-note">Keep this — if you clear your browser or switch devices, you&#8217;ll lose access without it.</p>
+                <p class="field-note recovery-links-row access-code-recovery-links">
+                  <a href="#" id="openRecoveryModalBannerLink" class="recovery-link">Recover by email</a>
+                  <span>&middot;</span>
+                  <a href="#" id="openRestoreCodeBannerLink" class="recovery-link">Restore using a saved code</a>
+                </p>
+                <div class="access-email-row" id="accessEmailRow" hidden>
+                  <input type="email" id="accessEmailInput" class="access-email-input" placeholder="your@email.com">
+                  <button type="button" id="linkEmailBtn" class="secondary-btn">Secure via Email</button>
+                </div>
+                <p class="field-note" id="linkEmailStatus"></p>
+                <p class="field-note access-code-dismiss-note">Link your email to get a confirmation, then recover your code anytime from any device.</p>
+              </div>
+            </div>
+            <div id="renderHistory" class="render-history" hidden></div>
+          </div>
+        </div>
+      </section>
+    </form>
   </main>
 
   <!-- Recovery Modal -->
@@ -302,6 +323,7 @@
         <button type="button" id="confirmBuyCreditsBtn" class="primary-action" style="min-width:0;flex:1">Continue to Checkout</button>
         <button type="button" id="closeBuyCreditsModalBtn" class="secondary-btn" style="flex:0 0 auto">Cancel</button>
       </div>
+      <p class="field-note modal-credit-recovery-note">After purchasing credits, keep your access code saved somewhere safe. If credits ever appear missing, use <a href="#" id="openRestoreCodeModalLink" class="recovery-link">Restore using a saved code</a>.</p>
     </div>
   </div>
 
