@@ -88,7 +88,6 @@ def _run_webview_mode() -> int:
     if not _wait_for_server():
         raise RuntimeError('VideoForge Studio could not start the local server on 127.0.0.1:5050.')
 
-    icon_path = _get_resource_root() / 'static' / 'app-icon.png'
     webview.create_window(
         'VideoForge Studio',
         LOCAL_URL,
@@ -96,7 +95,6 @@ def _run_webview_mode() -> int:
         height=960,
         min_size=(1180, 760),
         confirm_close=True,
-        icon=str(icon_path) if icon_path.exists() else None,
     )
     webview.start(gui='edgechromium', debug=False, private_mode=False)
     return 0

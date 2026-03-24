@@ -57,7 +57,7 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
-APP_VERSION = (os.environ.get("APP_VERSION") or "0.3.0").strip()
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.1").strip()
 APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
 APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
