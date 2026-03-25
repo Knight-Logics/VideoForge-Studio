@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory, stream_with_context
 import requests
 import stripe
 from werkzeug.utils import secure_filename
@@ -71,7 +71,7 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
-APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.2").strip()
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.3").strip()
 APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
 APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
@@ -223,6 +223,41 @@ def _is_newer_version(latest: str, current: str) -> bool:
     latest_parts.extend([0] * (length - len(latest_parts)))
     current_parts.extend([0] * (length - len(current_parts)))
     return tuple(latest_parts) > tuple(current_parts)
+
+
+def _get_latest_release_payload() -> tuple[dict | None, str | None]:
+    latest_url = f"https://api.github.com/repos/{APP_UPDATE_REPO}/releases/latest"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"{APP_NAME}/{APP_VERSION}",
+    }
+
+    try:
+        response = requests.get(latest_url, headers=headers, timeout=8)
+    except requests.RequestException as exc:
+        return None, f"Update check failed: {str(exc)}"
+
+    if response.status_code != 200:
+        return None, f"Update check returned HTTP {response.status_code}"
+
+    payload = response.json() if response.content else {}
+    return payload, None
+
+
+def _pick_release_asset(payload: dict) -> tuple[str, str]:
+    selected_url = ""
+    selected_name = ""
+    for asset in payload.get("assets") or []:
+        asset_url = str(asset.get("browser_download_url") or "").strip()
+        asset_name = str(asset.get("name") or "").strip()
+        if not asset_url:
+            continue
+        if asset_name.lower().endswith(".exe"):
+            return asset_url, asset_name
+        if not selected_url:
+            selected_url = asset_url
+            selected_name = asset_name
+    return selected_url, selected_name
 
 
 def _get_claim_key() -> str:
@@ -751,46 +786,20 @@ def create_app() -> Flask:
                 }
             )
 
-        latest_url = f"https://api.github.com/repos/{APP_UPDATE_REPO}/releases/latest"
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"{APP_NAME}/{APP_VERSION}",
-        }
-
-        try:
-            response = requests.get(latest_url, headers=headers, timeout=8)
-        except requests.RequestException as exc:
+        payload, error = _get_latest_release_payload()
+        if error:
             return jsonify(
                 {
                     "enabled": True,
                     "current_version": APP_VERSION,
                     "update_available": False,
-                    "error": f"Update check failed: {str(exc)}",
+                    "error": error,
                 }
             ), 200
 
-        if response.status_code != 200:
-            return jsonify(
-                {
-                    "enabled": True,
-                    "current_version": APP_VERSION,
-                    "update_available": False,
-                    "error": f"Update check returned HTTP {response.status_code}",
-                }
-            ), 200
-
-        payload = response.json() if response.content else {}
         latest_version = str(payload.get("tag_name") or "").strip()
         release_url = str(payload.get("html_url") or "").strip()
-        download_url = ""
-        for asset in payload.get("assets") or []:
-            asset_url = str(asset.get("browser_download_url") or "").strip()
-            name = str(asset.get("name") or "").strip().lower()
-            if asset_url and name.endswith(".exe"):
-                download_url = asset_url
-                break
-            if asset_url and not download_url:
-                download_url = asset_url
+        download_url, _download_name = _pick_release_asset(payload)
 
         update_available = bool(latest_version) and _is_newer_version(latest_version, APP_VERSION)
         return jsonify(
@@ -804,6 +813,63 @@ def create_app() -> Flask:
                 "download_url": download_url,
                 "published_at": payload.get("published_at"),
             }
+        )
+
+    @app.get("/api/app-update/download")
+    def app_update_download():
+        if not APP_UPDATE_ENABLED:
+            return jsonify({"error": "App updates are disabled on this server."}), 404
+
+        payload, error = _get_latest_release_payload()
+        if error:
+            return jsonify({"error": error}), 502
+
+        asset_url, asset_name = _pick_release_asset(payload)
+        if not asset_url:
+            release_url = str(payload.get("html_url") or "").strip()
+            return jsonify(
+                {
+                    "error": "No downloadable assets were found for the latest release.",
+                    "release_url": release_url,
+                }
+            ), 404
+
+        request_headers = {
+            "Accept": "application/octet-stream",
+            "User-Agent": f"{APP_NAME}/{APP_VERSION}",
+        }
+
+        try:
+            upstream = requests.get(asset_url, headers=request_headers, stream=True, timeout=(8, 300))
+        except requests.RequestException as exc:
+            return jsonify({"error": f"Could not start update download: {str(exc)}"}), 502
+
+        if upstream.status_code != 200:
+            upstream.close()
+            return jsonify({"error": f"Download source returned HTTP {upstream.status_code}"}), 502
+
+        safe_name = secure_filename(asset_name) or "VideoForge-Studio-Update.bin"
+
+        def _iter_chunks():
+            try:
+                for chunk in upstream.iter_content(chunk_size=262144):
+                    if chunk:
+                        yield chunk
+            finally:
+                upstream.close()
+
+        headers = {
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "no-store",
+        }
+        content_length = upstream.headers.get("Content-Length")
+        if content_length:
+            headers["Content-Length"] = content_length
+
+        return Response(
+            stream_with_context(_iter_chunks()),
+            headers=headers,
+            content_type=upstream.headers.get("Content-Type", "application/octet-stream"),
         )
 
     @app.get("/api/voice-preview/<voice_id>")

@@ -159,6 +159,15 @@ function setUpdateBanner(message, options = {}) {
   }
 }
 
+if (updateDownloadLink) {
+  updateDownloadLink.addEventListener("click", (event) => {
+    const href = (updateDownloadLink.getAttribute("href") || "").trim();
+    if (!href || href === "#") {
+      event.preventDefault();
+    }
+  });
+}
+
 function formatVersionLabel(version) {
   const cleaned = String(version || "").trim();
   if (!cleaned) {
@@ -212,7 +221,7 @@ async function checkForAppUpdate() {
     const current = formatVersionLabel(data.current_version);
 
     if (data.update_available) {
-      const target = data.download_url || data.release_url || "";
+      const target = "/api/app-update/download";
       setUpdateBanner(`Update available: ${latest} (current release ${current}).`, {
         available: true,
         href: target,
