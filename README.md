@@ -4,7 +4,7 @@ A web application for rendering ranked/countdown-style videos from uploaded clip
 
 > Developed by [Knight Logics](https://knightlogics.com)
 
-Recommended distribution model: downloadable Windows exe package so each user renders on their own machine.
+Recommended distribution model: downloadable Windows desktop app so each user renders on their own machine.
 
 
 ## Features
@@ -30,7 +30,8 @@ Quick path:
 
 1. User downloads the Windows exe release zip
 2. User extracts it and runs `VideoForge-Studio.exe`
-3. App opens at `http://127.0.0.1:5050` and renders locally on that user's hardware
+3. App opens in a standalone desktop window using the same VideoForge UI
+4. Rendering still runs locally on that user's hardware
 
 See full details in `DOWNLOAD_AND_RUN.md` and `USER_LOCAL_MODE.md`.
 
@@ -92,6 +93,7 @@ When this tunnel is running, your app is publicly reachable at `https://videofor
 
 | Layer | Technology |
 |---|---|
+| Desktop shell | PySide6 |
 | Web server | Python 3.11+ · Flask · Waitress (WSGI) |
 | Video processing | FFmpeg |
 | Image / overlay generation | Pillow |
@@ -202,11 +204,16 @@ This repository now includes `render.yaml` for one-click Render Blueprint deploy
 | Variable | Required | Description |
 |---|---|---|
 | `SECRET_KEY` | Yes | Random secret for session signing — generate one: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `APP_LOG_LEVEL` | No | Server logging level (default: `INFO`) |
 | `MAX_UPLOAD_MB` | No | Max upload size in MB (default: `4096`) |
+| `MAX_TITLE_LENGTH` | No | Max title length in characters (default: `120`) |
+| `MAX_CAPTION_LENGTH` | No | Max caption length per clip in characters (default: `240`) |
 | `FREE_TRIAL_CREDITS` | No | Free credits per new IP (default: `3`) |
 | `STRIPE_SECRET_KEY` | For billing | Stripe secret key |
 | `STRIPE_PUBLISHABLE_KEY` | For billing | Stripe publishable key |
-| `STRIPE_WEBHOOK_SECRET` | Recommended | Stripe webhook signing secret |
+| `STRIPE_WEBHOOK_SECRET` | For billing | Stripe webhook signing secret (required for webhook verification) |
+| `MAX_CHECKOUT_CREDITS` | No | Upper bound for one checkout purchase (default: `250`) |
+| `EXPOSE_INTERNAL_ERRORS` | No | Include tracebacks in API/SSE error payloads (default: `false`) |
 | `STRIPE_SUCCESS_URL` | No | Redirect after successful payment |
 | `STRIPE_PRICE_1_CREDIT_CENTS` | No | Price per credit in cents (default: `100` = $1.00) |
 | `SMTP_HOST` | For email | `smtp.gmail.com` |
@@ -263,18 +270,24 @@ VideoForge-Studio/
 | `GET` | `/` | App UI |
 | `GET` | `/health` | Health check |
 | `GET` | `/api/app-config` | App feature flags |
+| `GET` | `/api/app-update` | Update check metadata |
+| `GET` | `/api/voice-preview/<voice_id>` | Voice preview audio |
 | `GET` | `/api/billing/config` | Billing + SMTP status |
-| `POST` | `/api/token/claim` | Claim a token (get free trial credits) |
-| `GET` | `/api/token/balance` | Check credit balance |
-| `POST` | `/api/token/link-email` | Link recovery email to token |
-| `POST` | `/api/token/send-recovery` | Send recovery email |
-| `POST` | `/api/token/restore` | Restore token from email |
-| `POST` | `/api/render/start` | Submit a render job |
-| `GET` | `/api/render/status/<job_id>` | Job status |
-| `GET` | `/api/render/stream/<job_id>` | SSE progress stream |
-| `GET` | `/api/render/download/<job_id>` | Download rendered video |
+| `GET` | `/api/billing/status` | Check account credit status |
+| `POST` | `/api/billing/create-token` | Create token and apply free-trial policy |
+| `POST` | `/api/billing/token/balance` | Check token balance via POST form |
+| `POST` | `/api/billing/link-email` | Link recovery email to token |
+| `POST` | `/api/billing/recover` | Recover token by email |
+| `POST` | `/api/render` | Submit a final render job |
+| `POST` | `/api/preview` | Submit preview render job |
+| `GET` | `/api/jobs/<job_id>` | Job status snapshot |
+| `GET` | `/api/jobs/<job_id>/events` | SSE progress stream |
+| `GET` | `/outputs/<filename>` | Download rendered video |
+| `POST` | `/api/renders/save` | Save output metadata to account history |
+| `GET` | `/api/renders/list` | List account render history |
 | `POST` | `/api/payments/create-checkout-session` | Start Stripe checkout |
-| `POST` | `/api/payments/webhook` | Stripe webhook handler |
+| `POST` | `/api/payments/confirm-session` | Confirm paid checkout session |
+| `POST` | `/api/payments/stripe-webhook` | Stripe webhook handler |
 
 ---
 

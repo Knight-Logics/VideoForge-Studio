@@ -41,12 +41,17 @@ Required baseline:
 - `APP_BASE_URL` = temporary Render URL first, then custom domain URL
 - `APP_HOST` = `0.0.0.0`
 - `APP_DEBUG` = `false`
+- `APP_LOG_LEVEL` = `INFO`
 
 App behavior defaults you can keep:
 - `MAX_UPLOAD_MB` = `4096`
+- `MAX_TITLE_LENGTH` = `120`
+- `MAX_CAPTION_LENGTH` = `240`
 - `ALLOW_SHARED_ELEVENLABS_KEY` = `false`
 - `REQUIRE_PAYMENT_FOR_SHARED_KEY` = `true`
 - `SHARED_KEY_RENDER_PRICE_CREDITS` = `1`
+- `MAX_CHECKOUT_CREDITS` = `250`
+- `EXPOSE_INTERNAL_ERRORS` = `false`
 
 Billing (only if using credits/payments):
 - `STRIPE_SECRET_KEY`
@@ -97,7 +102,15 @@ Run these checks after deploy:
 5. If enabled, test credits flow and Stripe webhook
 6. If enabled, test email recovery flow
 
-## 7. Link from KnightLogics
+## 7. Release Validation Gate (Before Tagging)
+
+Run and complete:
+
+- `RELEASE_VALIDATION_CHECKLIST.md`
+
+Only tag a release after all items pass.
+
+## 8. Link from KnightLogics
 
 After domain is live, verify these links resolve:
 - `https://knightlogics.com/videoforge.html`

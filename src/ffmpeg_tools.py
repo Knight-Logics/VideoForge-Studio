@@ -5,6 +5,15 @@ from pathlib import Path
 from .utils import resolve_command, run_command
 
 
+def _mp4_video_compat_args() -> list[str]:
+    # Keep outputs broadly playable across embedded web engines and desktop browsers.
+    return ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+
+
+def _mp4_container_flags() -> list[str]:
+    return ["-movflags", "+faststart"]
+
+
 def normalize_clip(
     input_path: Path,
     output_path: Path,
@@ -30,6 +39,7 @@ def normalize_clip(
         "libx264",
         "-preset",
         "fast",
+        *_mp4_video_compat_args(),
         "-c:a",
         "aac",
         "-ac",
@@ -55,6 +65,7 @@ def overlay_image(video_path: Path, overlay_png: Path, output_path: Path) -> Non
         "libx264",
         "-preset",
         "fast",
+        *_mp4_video_compat_args(),
         "-c:a",
         "aac",
         str(output_path),
@@ -85,6 +96,7 @@ def overlay_frame_sequence(
         "libx264",
         "-preset",
         "fast",
+        *_mp4_video_compat_args(),
         "-c:a",
         "aac",
         "-shortest",
@@ -109,6 +121,7 @@ def mix_audio_tracks(video_path: Path, narration_mp3: Path, output_path: Path) -
         "[aout]",
         "-c:v",
         "copy",
+        *_mp4_container_flags(),
         "-c:a",
         "aac",
         str(output_path),
@@ -139,6 +152,7 @@ def overlay_caption_frames(
         "libx264",
         "-preset",
         "fast",
+        *_mp4_video_compat_args(),
         "-c:a",
         "aac",
         "-shortest",
@@ -174,6 +188,7 @@ def create_intermission(
             "-shortest",
             "-c:v",
             "libx264",
+            *_mp4_video_compat_args(),
             "-c:a",
             "aac",
             str(output_path),
@@ -190,6 +205,7 @@ def create_intermission(
             str(audio_path),
             "-c:v",
             "libx264",
+            *_mp4_video_compat_args(),
             "-c:a",
             "aac",
             "-shortest",
@@ -233,6 +249,7 @@ def concatenate_segments(segments: list[Path], output_path: Path, width: int, he
         "libx264",
         "-preset",
         "fast",
+        *_mp4_video_compat_args(),
         "-c:a",
         "aac",
         "-b:a",
@@ -260,6 +277,7 @@ def mix_background_music(video_path: Path, music_path: Path, output_path: Path, 
         "[aout]",
         "-c:v",
         "copy",
+        *_mp4_container_flags(),
         "-c:a",
         "aac",
         "-shortest",

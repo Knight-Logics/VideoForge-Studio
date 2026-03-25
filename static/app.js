@@ -62,6 +62,7 @@ const musicLevelRow = document.getElementById("musicLevelRow");
 const includeMusic = document.getElementById("includeMusic");
 const intermissionPreviewRow = document.getElementById("intermissionPreviewRow");
 const intermissionOpacityWrap = document.getElementById("intermissionOpacityWrap");
+const CLIP_DROPZONE_EMPTY_MESSAGE = "Drop video files here or click Add Clips";
 
 // ── Access code recovery elements ──────────────────────────────────────────
 const accessCodeBanner      = document.getElementById("accessCodeBanner");
@@ -126,9 +127,22 @@ function setUpdateBanner(message, options = {}) {
     return;
   }
 
+  const priorCheck = updateStatusBanner.querySelector(".update-status-check");
+  if (priorCheck) {
+    priorCheck.remove();
+  }
+
   updateStatusText.textContent = message;
   updateStatusBanner.hidden = false;
   updateStatusBanner.classList.toggle("is-available", Boolean(options.available));
+  updateStatusBanner.classList.toggle("is-up-to-date", Boolean(options.upToDate));
+
+  if (options.upToDate) {
+    const check = document.createElement("span");
+    check.className = "update-status-check";
+    check.textContent = "Up to date";
+    updateStatusBanner.appendChild(check);
+  }
 
   if (!updateDownloadLink) {
     return;
@@ -143,6 +157,38 @@ function setUpdateBanner(message, options = {}) {
     updateDownloadLink.hidden = true;
     updateDownloadLink.removeAttribute("href");
   }
+}
+
+function formatVersionLabel(version) {
+  const cleaned = String(version || "").trim();
+  if (!cleaned) {
+    return "unknown";
+  }
+  return cleaned.toLowerCase().startsWith("v") ? cleaned : `v${cleaned}`;
+}
+
+function updateClipDropzoneState(isDragOver = false) {
+  if (!clipDropzone) {
+    return;
+  }
+
+  if (isDragOver) {
+    clipDropzone.hidden = false;
+    clipDropzone.textContent = "Release to add clips";
+    return;
+  }
+
+  const clipCount = selectedClips.length;
+  if (clipCount <= 0) {
+    clipDropzone.hidden = false;
+    clipDropzone.textContent = CLIP_DROPZONE_EMPTY_MESSAGE;
+    clipDropzone.classList.remove("has-files");
+    return;
+  }
+
+  clipDropzone.hidden = true;
+  clipDropzone.classList.add("has-files");
+  clipDropzone.textContent = CLIP_DROPZONE_EMPTY_MESSAGE;
 }
 
 async function checkForAppUpdate() {
@@ -162,11 +208,12 @@ async function checkForAppUpdate() {
       return;
     }
 
+    const latest = formatVersionLabel(data.latest_version || data.current_version);
+    const current = formatVersionLabel(data.current_version);
+
     if (data.update_available) {
-      const latest = data.latest_version || "latest";
-      const current = data.current_version || "current";
       const target = data.download_url || data.release_url || "";
-      setUpdateBanner(`Update available: ${latest} (current ${current}).`, {
+      setUpdateBanner(`Update available: ${latest} (current release ${current}).`, {
         available: true,
         href: target,
         linkText: "Download Update",
@@ -174,9 +221,17 @@ async function checkForAppUpdate() {
       return;
     }
 
-    updateStatusBanner.hidden = true;
+    if (data.error) {
+      setUpdateBanner(`Current release ${current}. Update check unavailable right now.`);
+      log(`Update check warning: ${data.error}`);
+      return;
+    }
+
+    setUpdateBanner(`Release ${current}`, {
+      upToDate: true,
+    });
   } catch (error) {
-    setUpdateBanner("Could not check for updates right now.");
+    setUpdateBanner("Current release unknown. Could not check for updates right now.");
     log(`Update check failed: ${error.message}`);
   }
 }
@@ -190,6 +245,74 @@ function log(message) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
   logBox.textContent += `${line}\n`;
   logBox.scrollTop = logBox.scrollHeight;
+}
+
+function mapApiErrorToUserMessage(errorText, statusCode) {
+  const text = String(errorText || "").trim();
+  const lowered = text.toLowerCase();
+
+  if (!text) {
+    if (statusCode === 413) return `Upload too large for server limit (${maxUploadMb} MB).`;
+    if (statusCode === 402) return "Payment or credits are required to continue this action.";
+    if (statusCode === 409) return "Request could not be completed in current state. Please retry.";
+    if (statusCode >= 500) return "Server error while starting render. Please retry in a moment.";
+    return "Request failed. Please review inputs and try again.";
+  }
+
+  if (lowered.includes("upload too large") || lowered.includes("max_upload_mb") || statusCode === 413) {
+    return `Upload too large for server limit (${maxUploadMb} MB).`;
+  }
+  if (lowered.includes("token is required") || lowered.includes("invalid token format")) {
+    return "Your access token is invalid or missing. Refresh credits and retry.";
+  }
+  if (lowered.includes("credits") && lowered.includes("required")) {
+    return "You need credits to continue. Use Buy Credits, then retry.";
+  }
+  if (lowered.includes("stripe is not configured")) {
+    return "Billing is temporarily unavailable on this server. Try again later.";
+  }
+  if (statusCode >= 500) {
+    return "Server error while processing request. Please retry in a moment.";
+  }
+  return text;
+}
+
+function reportClientDiagnostic(eventName, component, details = {}) {
+  fetch("/api/diagnostics/client-event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: eventName,
+      component,
+      details,
+    }),
+  }).catch(() => {
+    // Diagnostics must never break user flow.
+  });
+}
+
+function attachVideoDiagnostics(videoElement, component, fileLabel = "") {
+  if (!videoElement || videoElement.dataset.diagAttached === "true") {
+    return;
+  }
+
+  videoElement.dataset.diagAttached = "true";
+
+  const emit = (eventName, extra = {}) => {
+    reportClientDiagnostic(eventName, component, {
+      fileLabel,
+      src: videoElement.currentSrc || videoElement.getAttribute("src") || "",
+      readyState: videoElement.readyState,
+      networkState: videoElement.networkState,
+      duration: Number.isFinite(videoElement.duration) ? videoElement.duration : null,
+      errorCode: videoElement.error ? videoElement.error.code : null,
+      ...extra,
+    });
+  };
+
+  ["loadedmetadata", "canplay", "playing", "stalled", "abort", "emptied", "error"].forEach((evt) => {
+    videoElement.addEventListener(evt, () => emit(evt));
+  });
 }
 
 function abbreviateForHistory(text, maxLen = 48) {
@@ -269,13 +392,14 @@ function abbreviateTitle(text, maxLen = 24) {
 
 function renderClipGallery() {
   clipGallery.innerHTML = "";
+  clipGallery.classList.toggle("single-clip", selectedClips.length === 1);
   selectedClips.forEach((clip, index) => {
     const card = document.createElement("div");
     card.className = "clip-card";
     card.dataset.index = String(index);
     card.innerHTML = `
       <span class="clip-index-badge">#${index + 1}</span>
-      <video src="${clip.objectUrl}" controls preload="metadata"></video>
+      <video src="${clip.objectUrl}" controls preload="metadata" playsinline></video>
       <p class="clip-caption-label">Clip Card Title</p>
       <input class="clip-title-input" type="text" data-role="clipTitleInput" data-index="${index}" value="${clip.title.replace(/\"/g, "&quot;")}" placeholder="Edit displayed clip title">
       <p class="clip-title" title="${clip.title.replace(/\"/g, "&quot;")}">${clip.shortTitle}</p>
@@ -283,10 +407,17 @@ function renderClipGallery() {
       <textarea class="clip-caption-input" data-role="clipCaptionInput" data-index="${index}" rows="3" placeholder="What should appear on-screen during intermission and be spoken by narration?">${clip.caption.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>
       <button class="clip-remove-btn" type="button" data-role="removeClip" data-index="${index}">Remove</button>
     `;
+
+    const clipVideo = card.querySelector("video");
+    if (clipVideo) {
+      attachVideoDiagnostics(clipVideo, `clip-card-${index + 1}`, clip.file.name || clip.title || "clip");
+    }
+
     clipGallery.appendChild(card);
   });
 
   clipCountStatus.textContent = `${selectedClips.length} clip${selectedClips.length === 1 ? "" : "s"} selected`;
+  updateClipDropzoneState(false);
   refreshSelectedUploadSize();
   requestAnimationFrame(updateClipSliderState);
 }
@@ -819,7 +950,7 @@ async function startJob(payload) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || "Failed to start render");
+    throw new Error(mapApiErrorToUserMessage(data.error || "", response.status));
   }
   return data.job_id;
 }
@@ -987,6 +1118,7 @@ function subscribeToEvents(jobId) {
   closeStream();
   const source = new EventSource(`/api/jobs/${jobId}/events`);
   currentSource = source;
+  let streamFinished = false;
 
   source.addEventListener("progress", (event) => {
     const data = JSON.parse(event.data);
@@ -997,6 +1129,7 @@ function subscribeToEvents(jobId) {
   });
 
   source.addEventListener("done", (event) => {
+    streamFinished = true;
     const data = JSON.parse(event.data);
     statusText.textContent = "completed (100%)";
     jobText.textContent = "Render finished";
@@ -1036,6 +1169,7 @@ function subscribeToEvents(jobId) {
   });
 
   source.addEventListener("error", (event) => {
+    streamFinished = true;
     try {
       const data = JSON.parse(event.data);
       log(`Render failed: ${data.error || "Unknown error"}`);
@@ -1050,7 +1184,15 @@ function subscribeToEvents(jobId) {
   });
 
   source.onerror = () => {
-    log("Connection to render stream closed.");
+    if (streamFinished) {
+      return;
+    }
+    log("Render stream disconnected. You can retry if progress does not continue.");
+    statusText.textContent = "stream disconnected";
+    jobText.textContent = "Connection lost while waiting for updates";
+    submitBtn.disabled = false;
+    activeRenderMeta = null;
+    closeStream();
   };
 }
 
@@ -1536,11 +1678,16 @@ openClipPickerBtn.addEventListener("click", () => {
   clipPickerInput.click();
 });
 
+clipDropzone.addEventListener("click", () => {
+  clipPickerInput.click();
+});
+
 ["dragenter", "dragover"].forEach((evtName) => {
   clipDropzone.addEventListener(evtName, (event) => {
     event.preventDefault();
     event.stopPropagation();
     clipDropzone.classList.add("drag-over");
+    updateClipDropzoneState(true);
   });
 });
 
@@ -1549,6 +1696,7 @@ openClipPickerBtn.addEventListener("click", () => {
     event.preventDefault();
     event.stopPropagation();
     clipDropzone.classList.remove("drag-over");
+    updateClipDropzoneState(false);
   });
 });
 
@@ -1743,6 +1891,7 @@ async function generatePreview() {
   const previewStatusBar = document.getElementById("previewStatusBar");
 
   closePreviewStream();
+  attachVideoDiagnostics(previewVideo, "preview-player");
 
   if (selectedClips.length === 0) {
     previewProgressWrap.hidden = true;
@@ -1767,9 +1916,15 @@ async function generatePreview() {
   const backgroundMusicFile = document.getElementById("backgroundMusic").files[0];
   const musicLevel = includeMusicChecked ? Number(musicLevelInput.value) / 100 : 0.15;
 
-  if (previewVideo.hidden && selectedClips[0]?.objectUrl) {
+  if (selectedClips[0]?.objectUrl) {
     previewVideo.src = selectedClips[0].objectUrl;
+    previewVideo.currentTime = 0;
+    previewVideo.load();
     previewVideo.hidden = false;
+    reportClientDiagnostic("preview_src_selected_clip", "preview-player", {
+      fileLabel: selectedClips[0].file?.name || "clip-1",
+      selectedClipBytes: selectedClips[0].file?.size || 0,
+    });
   }
 
   const payload = new FormData();
@@ -1796,7 +1951,7 @@ async function generatePreview() {
     const response = await fetch("/api/preview", { method: "POST", body: payload });
     if (!response.ok) {
       const data = await response.json();
-      throw new Error(data.error || "Preview request failed");
+      throw new Error(mapApiErrorToUserMessage(data.error || "", response.status));
     }
     const result = await response.json();
     jobId = result.job_id;
@@ -1811,6 +1966,7 @@ async function generatePreview() {
 
   const source = new EventSource(`/api/jobs/${jobId}/events`);
   previewJobSource = source;
+  let previewStreamFinished = false;
 
   source.addEventListener("progress", (event) => {
     const data = JSON.parse(event.data);
@@ -1821,6 +1977,7 @@ async function generatePreview() {
   });
 
   source.addEventListener("done", (event) => {
+    previewStreamFinished = true;
     const data = JSON.parse(event.data);
     previewProgressBar.style.width = "100%";
     if (data.output_file) {
@@ -1828,6 +1985,9 @@ async function generatePreview() {
       previewVideo.currentTime = 0;
       previewVideo.load();
       previewVideo.hidden = false;
+      reportClientDiagnostic("preview_src_render_output", "preview-player", {
+        outputFile: data.output_file,
+      });
     }
     previewStatus.textContent = includeMusicChecked
       ? "Preview ready. Audio playback reflects your background music mix. ElevenLabs narration still applies on final render only."
@@ -1840,6 +2000,7 @@ async function generatePreview() {
   });
 
   source.addEventListener("error", (event) => {
+    previewStreamFinished = true;
     let msg = "Preview generation failed.";
     try {
       const data = JSON.parse(event.data);
@@ -1851,6 +2012,9 @@ async function generatePreview() {
   });
 
   source.onerror = () => {
+    if (!previewStreamFinished) {
+      previewStatusBar.textContent = "Preview stream disconnected. Retrying soon when settings change.";
+    }
     closePreviewStream();
   };
 }

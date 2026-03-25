@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import smtplib
 import sys
+from collections import deque
+from datetime import datetime
+from hmac import compare_digest
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -24,12 +28,19 @@ from src.utils import get_resource_root, get_runtime_root
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.environ.get("APP_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("videoforge.app")
+
 RESOURCE_ROOT = get_resource_root()
 RUNTIME_ROOT = get_runtime_root()
 APP_ROOT = RESOURCE_ROOT
 WORKSPACE = RUNTIME_ROOT / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 OUTPUTS = WORKSPACE / "outputs"
+APP_LOG_FILE = Path(os.environ.get("APP_LOG_FILE", str(WORKSPACE / "logs" / "videoforge.log")))
 RENDER_HISTORY_FILE = Path(os.environ.get("RENDER_HISTORY_FILE", str(WORKSPACE / "render_history.json")))
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "4096"))
 MAX_OUTPUT_DIMENSION = int(os.environ.get("MAX_OUTPUT_DIMENSION", "4096"))
@@ -46,6 +57,9 @@ STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "http://127.0.0.1:5050/?
 STRIPE_CURRENCY = os.environ.get("STRIPE_CURRENCY", "usd")
 STRIPE_PRICE_1_CREDIT_CENTS = int(os.environ.get("STRIPE_PRICE_1_CREDIT_CENTS", "100"))
 FREE_TRIAL_CREDITS = max(0, int(os.environ.get("FREE_TRIAL_CREDITS", "3")))
+MAX_CHECKOUT_CREDITS = max(1, int(os.environ.get("MAX_CHECKOUT_CREDITS", "250")))
+MAX_TITLE_LENGTH = max(32, int(os.environ.get("MAX_TITLE_LENGTH", "120")))
+MAX_CAPTION_LENGTH = max(32, int(os.environ.get("MAX_CAPTION_LENGTH", "240")))
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
@@ -57,7 +71,7 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
-APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.1").strip()
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.2").strip()
 APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
 APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
@@ -81,9 +95,47 @@ DEFAULT_ELEVENLABS_VOICE_OPTIONS = [
 job_manager = JobManager(WORKSPACE)
 render_history = RenderHistory(RENDER_HISTORY_FILE)
 billing_store = BillingStore(BILLING_TOKENS_FILE, BILLING_AUDIT_FILE)
+CLIENT_DIAGNOSTIC_EVENTS = deque(maxlen=400)
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
+
+
+def _configure_file_logging() -> None:
+    APP_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    root_logger = logging.getLogger()
+    target_file = str(APP_LOG_FILE.resolve()).lower()
+
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.FileHandler) and str(Path(handler.baseFilename).resolve()).lower() == target_file:
+            return
+
+    file_handler = logging.FileHandler(APP_LOG_FILE, encoding="utf-8")
+    file_handler.setLevel(os.environ.get("APP_LOG_LEVEL", "INFO").upper())
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    root_logger.addHandler(file_handler)
+
+
+def _read_log_tail(line_count: int = 250, max_bytes: int = 512000) -> list[str]:
+    if not APP_LOG_FILE.exists():
+        return []
+
+    try:
+        with APP_LOG_FILE.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            file_size = handle.tell()
+            read_size = min(file_size, max_bytes)
+            if read_size > 0:
+                handle.seek(-read_size, os.SEEK_END)
+            chunk = handle.read(read_size)
+    except OSError:
+        return []
+
+    text = chunk.decode("utf-8", errors="replace")
+    return text.splitlines()[-line_count:]
+
+
+_configure_file_logging()
 
 
 def _allowed(filename: str, allowed: set[str]) -> bool:
@@ -103,6 +155,15 @@ def _save_upload(file_storage, target_dir: Path, prefix: str) -> Path:
 
 def _count_words(text: str) -> int:
     return len([token for token in text.strip().split() if token])
+
+
+def _sanitize_user_text(value: str, field_name: str, max_length: int) -> str:
+    sanitized = (value or "").replace("\x00", "").strip()
+    if not sanitized:
+        raise ValueError(f"{field_name} cannot be empty")
+    if len(sanitized) > max_length:
+        raise ValueError(f"{field_name} must be <= {max_length} characters")
+    return sanitized
 
 
 def _calculate_narration_credit_cost(captions: list[str]) -> tuple[int, int]:
@@ -237,7 +298,7 @@ def _require_admin_billing_key() -> Response | tuple[Response, int] | None:
         return jsonify({"error": "ADMIN_BILLING_KEY is not configured on the server"}), 403
 
     provided = (request.headers.get("X-Admin-Billing-Key") or request.form.get("admin_key") or request.args.get("admin_key") or "").strip()
-    if provided != ADMIN_BILLING_KEY:
+    if not compare_digest(provided, ADMIN_BILLING_KEY):
         return jsonify({"error": "Unauthorized"}), 401
 
     return None
@@ -280,10 +341,30 @@ def _finalize_paid_checkout_session(session) -> tuple[str, int, bool]:
 
     already_processed = bool(purchase_id and billing_store.is_purchase_processed(purchase_id))
 
-    if purchase_id and not already_processed:
-        if session.get("payment_status") == "paid" and token and credits > 0:
-            billing_store.add_credits(token, credits, source="stripe_checkout")
-        billing_store.mark_purchase_processed(purchase_id)
+    if purchase_id and session.get("payment_status") == "paid" and token and credits > 0:
+        already_processed, balance = billing_store.apply_purchase_once(
+            purchase_id=purchase_id,
+            token=token,
+            credits=credits,
+            source="stripe_checkout",
+        )
+        if already_processed:
+            logger.info("Stripe purchase already processed", extra={"purchase_id": purchase_id})
+        else:
+            logger.info(
+                "Stripe purchase credited",
+                extra={"purchase_id": purchase_id, "credits": credits, "balance": balance},
+            )
+    elif purchase_id and not already_processed:
+        is_paid = bool(session.get("payment_status") == "paid")
+        if not is_paid:
+            billing_store.mark_purchase_processed(purchase_id)
+            logger.info("Stripe unpaid session marked processed", extra={"purchase_id": purchase_id})
+        else:
+            logger.error(
+                "Stripe paid session not credited due to invalid metadata",
+                extra={"purchase_id": purchase_id, "has_token": bool(token), "credits": credits},
+            )
 
     return token, credits, already_processed
 
@@ -305,10 +386,73 @@ def create_app() -> Flask:
     def index() -> str:
         return render_template("index.html")
 
+    @app.get("/diagnostics")
+    def diagnostics() -> str:
+        return render_template("diagnostics.html")
+
+    @app.get("/api/diagnostics/logs")
+    def diagnostics_logs():
+        try:
+            lines = int((request.args.get("lines") or "250").strip())
+        except ValueError:
+            lines = 250
+
+        lines = max(50, min(lines, 1000))
+        return jsonify(
+            {
+                "ok": True,
+                "app_version": APP_VERSION,
+                "desktop_shell": os.environ.get("VIDEOFORGE_DESKTOP_SHELL", "") or "browser",
+                "log_file": str(APP_LOG_FILE),
+                "lines": _read_log_tail(line_count=lines),
+            }
+        )
+
+    @app.post("/api/diagnostics/client-event")
+    def diagnostics_client_event():
+        payload = request.get_json(silent=True) or {}
+        event = str(payload.get("event") or "unknown").strip()
+        component = str(payload.get("component") or "ui").strip()
+        details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+        shell = os.environ.get("VIDEOFORGE_DESKTOP_SHELL", "") or "browser"
+        event_payload = {
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "event": event,
+            "component": component,
+            "shell": shell,
+            "details": details,
+        }
+        CLIENT_DIAGNOSTIC_EVENTS.append(event_payload)
+        logger.info("Client diagnostic event | %s", json.dumps(event_payload, ensure_ascii=False, sort_keys=True))
+        return jsonify({"ok": True})
+
+    @app.get("/api/diagnostics/client-events")
+    def diagnostics_client_events():
+        try:
+            limit = int((request.args.get("limit") or "80").strip())
+        except ValueError:
+            limit = 80
+
+        limit = max(10, min(limit, 400))
+        events = list(CLIENT_DIAGNOSTIC_EVENTS)[-limit:]
+        return jsonify({"ok": True, "count": len(events), "events": events})
+
     @app.post("/api/render")
     def start_render():
-        title_line_1 = (request.form.get("title_line_1") or "Top 5 Funniest").strip()
-        title_line_2 = (request.form.get("title_line_2") or "Moments").strip()
+        try:
+            title_line_1 = _sanitize_user_text(
+                (request.form.get("title_line_1") or "Top 5 Funniest"),
+                "title_line_1",
+                MAX_TITLE_LENGTH,
+            )
+            title_line_2 = _sanitize_user_text(
+                (request.form.get("title_line_2") or "Moments"),
+                "title_line_2",
+                MAX_TITLE_LENGTH,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
         enable_narration = (request.form.get("enable_narration") or "").lower() == "true"
         include_music = (request.form.get("include_music") or "").lower() == "true"
         background_music_level_raw = (request.form.get("background_music_level") or "0.15").strip()
@@ -363,9 +507,14 @@ def create_app() -> Flask:
                 return jsonify({"error": f"Clip {index} has an invalid extension"}), 400
 
             saved = _save_upload(file_storage, clip_upload_root, f"clip{index}")
-            caption_text = str(captions[index - 1]).strip()
-            if not caption_text:
-                return jsonify({"error": f"Caption {index} cannot be empty"}), 400
+            try:
+                caption_text = _sanitize_user_text(
+                    str(captions[index - 1]),
+                    f"Caption {index}",
+                    MAX_CAPTION_LENGTH,
+                )
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
             clip_inputs.append(ClipInput(file_path=saved, caption=caption_text))
 
         narration_word_count, narration_credit_cost = _calculate_narration_credit_cost([clip.caption for clip in clip_inputs])
@@ -888,33 +1037,39 @@ def create_app() -> Flask:
             return jsonify({"error": "invalid token format"}), 400
         if credits <= 0:
             return jsonify({"error": "credits must be > 0"}), 400
+        if credits > MAX_CHECKOUT_CREDITS:
+            return jsonify({"error": f"credits must be <= {MAX_CHECKOUT_CREDITS}"}), 400
 
         unit_amount = STRIPE_PRICE_1_CREDIT_CENTS
 
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            success_url=_build_checkout_success_url(),
-            cancel_url=STRIPE_CANCEL_URL,
-            client_reference_id=token[:200],
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": STRIPE_CURRENCY,
-                        "product_data": {
-                            "name": "VideoForge Narration Credit",
-                            "description": "One shared ElevenLabs narration credit",
+        try:
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                success_url=_build_checkout_success_url(),
+                cancel_url=STRIPE_CANCEL_URL,
+                client_reference_id=token[:200],
+                line_items=[
+                    {
+                        "price_data": {
+                            "currency": STRIPE_CURRENCY,
+                            "product_data": {
+                                "name": "VideoForge Narration Credit",
+                                "description": "One shared ElevenLabs narration credit",
+                            },
+                            "unit_amount": unit_amount,
                         },
-                        "unit_amount": unit_amount,
-                    },
-                    "quantity": credits,
-                }
-            ],
-            metadata={
-                "token": token,
-                "credits": str(credits),
-                "kind": "shared_narration_credit",
-            },
-        )
+                        "quantity": credits,
+                    }
+                ],
+                metadata={
+                    "token": token,
+                    "credits": str(credits),
+                    "kind": "shared_narration_credit",
+                },
+            )
+        except Exception as exc:
+            logger.exception("Stripe checkout session creation failed")
+            return jsonify({"error": f"Could not start checkout: {str(exc)}"}), 502
 
         return jsonify({"url": session.url, "session_id": session.id})
 
@@ -936,6 +1091,10 @@ def create_app() -> Flask:
             return jsonify({"error": "Checkout session is not paid yet."}), 409
 
         token, credits, already_processed = _finalize_paid_checkout_session(session)
+        logger.info(
+            "Stripe session confirmed",
+            extra={"session_id": session_id, "already_processed": already_processed, "credited_credits": credits},
+        )
         status = billing_store.get_status(token) if token and is_valid_paid_access_token(token) else None
 
         return jsonify(
@@ -960,13 +1119,21 @@ def create_app() -> Flask:
         try:
             event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
         except ValueError:
+            logger.warning("Stripe webhook rejected: invalid payload")
             return jsonify({"error": "Invalid payload"}), 400
         except Exception:
+            logger.warning("Stripe webhook rejected: invalid signature or verification error")
             return jsonify({"error": "Invalid signature"}), 400
 
         if event.get("type") == "checkout.session.completed":
             session = event["data"]["object"]
-            _finalize_paid_checkout_session(session)
+            token, credits, already_processed = _finalize_paid_checkout_session(session)
+            logger.info(
+                "Stripe webhook checkout.session.completed processed",
+                extra={"already_processed": already_processed, "credited_credits": credits, "has_token": bool(token)},
+            )
+        else:
+            logger.info("Stripe webhook ignored event type", extra={"event_type": str(event.get("type") or "")})
 
         return jsonify({"received": True})
 

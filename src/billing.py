@@ -298,6 +298,55 @@ class BillingStore:
                     },
                 )
 
+    def apply_purchase_once(self, purchase_id: str, token: str, credits: int, source: str = "stripe_checkout") -> tuple[bool, int]:
+        """Atomically apply credits for a purchase exactly once.
+
+        Returns (already_processed, current_balance).
+        """
+        if not purchase_id:
+            raise ValueError("purchase_id is required")
+        if not token:
+            raise ValueError("token is required")
+        if credits <= 0:
+            raise ValueError("credits must be > 0")
+
+        with self._lock:
+            payload = self._read()
+            processed = payload.setdefault("processed_purchase_ids", [])
+            record = self._get_token_record(payload, token)
+
+            if purchase_id in processed:
+                self._write(payload)
+                return True, int(record.get("credits", 0))
+
+            current_paid = int(record.get("paid_credits", 0))
+            record["paid_credits"] = current_paid + credits
+            if not record.get("created_at"):
+                record["created_at"] = self._utc_now()
+            record["last_updated_at"] = self._utc_now()
+            self._sync_record_totals(record)
+
+            processed.append(purchase_id)
+            updated = int(record.get("credits", 0))
+            self._write(payload)
+
+            self._audit(
+                "credits_added",
+                {
+                    "token": token,
+                    "source": source,
+                    "delta": credits,
+                    "balance": updated,
+                },
+            )
+            self._audit(
+                "purchase_marked_processed",
+                {
+                    "purchase_id": purchase_id,
+                },
+            )
+            return False, updated
+
     def link_email(self, token: str, email: str) -> tuple[bool, str]:
         with self._lock:
             payload = self._read()

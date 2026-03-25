@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import queue
 import threading
 import traceback
@@ -12,6 +14,10 @@ from typing import Generator, Optional
 from .models import RenderSettings
 from .pipeline_engine import run_render_pipeline
 from .utils import ensure_dirs
+
+
+logger = logging.getLogger("videoforge.job_manager")
+EXPOSE_INTERNAL_ERRORS = os.environ.get("EXPOSE_INTERNAL_ERRORS", "false").lower() == "true"
 
 
 @dataclass
@@ -103,15 +109,20 @@ class JobManager:
         except Exception as exc:
             job.status = "failed"
             job.error = str(exc)
+            logger.exception("Render job failed", extra={"job_id": job.job_id})
             self._update_status(job, "Render failed", job.progress or 100, status="failed")
+
+            payload = {
+                "job_id": job.job_id,
+                "error": str(exc),
+            }
+            if EXPOSE_INTERNAL_ERRORS:
+                payload["traceback"] = traceback.format_exc()
+
             self._emit(
                 job,
                 "error",
-                {
-                    "job_id": job.job_id,
-                    "error": str(exc),
-                    "traceback": traceback.format_exc(),
-                },
+                payload,
             )
 
     def stream_events(self, job_id: str) -> Generator[JobEvent, None, None]:

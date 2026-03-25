@@ -100,6 +100,17 @@
           <div class="row">
             <div id="clipDropzone" class="clip-dropzone">Drop video files here or click Add Clips</div>
           </div>
+
+          <div class="row">
+            <div class="clip-gallery-shell">
+              <button type="button" id="clipSliderPrev" class="clip-slider-btn" aria-label="Previous clips" hidden>&lsaquo;</button>
+              <div class="clip-gallery-viewport" id="clipGalleryViewport">
+                <div class="clip-gallery" id="clipGallery"></div>
+              </div>
+              <button type="button" id="clipSliderNext" class="clip-slider-btn" aria-label="Next clips" hidden>&rsaquo;</button>
+            </div>
+          </div>
+
           <p class="field-note" id="clipCountStatus">0 clips selected</p>
           <p class="field-note" id="uploadLimitNote">Upload limit: loading...</p>
           <p class="field-note" id="selectedUploadSize">Selected upload size: 0 MB</p>
@@ -110,16 +121,6 @@
               <p class="caption-guide-title">Quick Guide: Clip Caption / Narration Text</p>
               <p class="field-note">This text is used for the intermission caption on screen, and it is also spoken by ElevenLabs when narration is enabled.</p>
               <button type="button" id="dismissCaptionGuideBtn" class="secondary-btn">Got it</button>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="clip-gallery-shell">
-              <button type="button" id="clipSliderPrev" class="clip-slider-btn" aria-label="Previous clips" hidden>&lsaquo;</button>
-              <div class="clip-gallery-viewport" id="clipGalleryViewport">
-                <div class="clip-gallery" id="clipGallery"></div>
-              </div>
-              <button type="button" id="clipSliderNext" class="clip-slider-btn" aria-label="Next clips" hidden>&rsaquo;</button>
             </div>
           </div>
 

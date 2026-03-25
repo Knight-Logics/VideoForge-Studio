@@ -57,17 +57,26 @@ def _should_use_desktop_ui() -> bool:
     if mode == 'browser':
         return False
 
+    preferred_engine = os.environ.get('VIDEOFORGE_UI_ENGINE', 'webview').strip().lower()
+
+    if preferred_engine == 'webview':
+        try:
+            import webview  # noqa: F401
+            return True
+        except ImportError:
+            pass
+
     try:
-        import webview  # noqa: F401
+        import PySide6  # noqa: F401
         return True
     except ImportError:
         pass
 
     try:
-        import PySide6  # noqa: F401
+        import webview  # noqa: F401
+        return True
     except ImportError:
         return False
-    return True
 
 
 def _run_browser_mode() -> None:
@@ -155,6 +164,10 @@ def _run_desktop_mode() -> int:
             open_browser_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(LOCAL_URL)))
             toolbar.addAction(open_browser_action)
 
+            diagnostics_action = QAction('Diagnostics', self)
+            diagnostics_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(f'{LOCAL_URL}/diagnostics')))
+            toolbar.addAction(diagnostics_action)
+
             self.view.load(QUrl(LOCAL_URL))
 
     os.environ['VIDEOFORGE_DESKTOP_SHELL'] = 'pyside6'
@@ -181,12 +194,21 @@ def main() -> None:
         _run_browser_mode()
         return
 
+    preferred_engine = os.environ.get('VIDEOFORGE_UI_ENGINE', 'webview').strip().lower()
+
     try:
+        if preferred_engine == 'webview':
+            try:
+                raise SystemExit(_run_webview_mode())
+            except ImportError:
+                pass
+            raise SystemExit(_run_desktop_mode())
+
         try:
-            raise SystemExit(_run_webview_mode())
+            raise SystemExit(_run_desktop_mode())
         except ImportError:
             pass
-        raise SystemExit(_run_desktop_mode())
+        raise SystemExit(_run_webview_mode())
     except RuntimeError as error:
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox

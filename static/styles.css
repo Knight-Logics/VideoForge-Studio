@@ -142,6 +142,31 @@ body {
   background: rgba(16, 62, 53, 0.35);
 }
 
+.update-banner.is-up-to-date {
+  border-color: rgba(64, 224, 183, 0.5);
+  background: rgba(16, 62, 53, 0.35);
+}
+
+.update-banner.is-up-to-date #updateStatusText {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.update-status-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 700;
+  margin-left: 8px;
+}
+
+.update-status-check::before {
+  content: "\2713";
+}
+
 .update-banner a {
   color: var(--accent);
   font-weight: 700;
@@ -189,6 +214,10 @@ body {
   margin: 12px 0 10px;
   font-family: "Space Grotesk", sans-serif;
   font-size: 1.25rem;
+}
+
+#selectedUploadSize {
+  margin-bottom: 18px;
 }
 
 .narration-panel,
@@ -354,6 +383,10 @@ body {
   grid-auto-flow: column;
   grid-auto-columns: calc((100% - 12px) / 2);
   gap: 12px;
+}
+
+.clip-gallery.single-clip {
+  grid-auto-columns: 100%;
 }
 
 .clip-card {
@@ -543,7 +576,7 @@ input[type="number"] {
 .toggle {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   color: var(--text);
   border: 1px solid rgba(140, 180, 230, 0.3);
@@ -560,7 +593,7 @@ input[type="number"] {
 }
 
 .toggle input[type="checkbox"] {
-  margin-top: 1px;
+  margin-top: 0;
   width: 14px;
   height: 14px;
   flex: 0 0 14px;
@@ -881,11 +914,18 @@ button:hover {
   text-align: center;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.02);
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
 }
 
 .clip-dropzone.drag-over {
   border-color: var(--accent);
   background: rgba(50, 215, 162, 0.08);
+  color: var(--text);
+}
+
+.clip-dropzone.has-files {
+  border-color: rgba(50, 215, 162, 0.42);
+  background: rgba(50, 215, 162, 0.06);
   color: var(--text);
 }
 

@@ -211,3 +211,47 @@ def generate_speech_hq_with_timestamps(
         "duration": hq_duration if hq_duration > 0 else ts_duration,
         "word_timings": word_timings,
     }
+
+
+def generate_voice_preview(text: str, voice_id: str, api_key: Optional[str] = None) -> tuple[bytes, str]:
+    """
+    Generate a voice preview sample without writing to disk.
+    Returns (audio_bytes, content_type) for immediate streaming.
+    Used for UI previews — does NOT charge credits.
+    """
+    resolved_api_key = api_key or os.environ.get("ELEVENLABS_API_KEY", "")
+    resolved_voice = voice_id or os.environ.get("ELEVENLABS_VOICE_ID", "")
+
+    if not resolved_api_key:
+        raise RuntimeError("ELEVENLABS_API_KEY is not set")
+    if not resolved_voice:
+        raise RuntimeError("ELEVENLABS_VOICE_ID is not set")
+
+    cleaned_text = sanitize_tts_text(text)
+    if not cleaned_text:
+        cleaned_text = "This is a voice preview sample."
+
+    url = f"{ELEVENLABS_API_URL}/text-to-speech/{resolved_voice}"
+    payload = {
+        "text": cleaned_text,
+        "model_id": "eleven_monolingual_v1",
+        "output_format": "mp3_44100_128",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.8,
+            "style": 0.05,
+            "speed": 1.08,
+            "use_speaker_boost": True,
+        },
+    }
+
+    response = requests.post(
+        url,
+        headers={"xi-api-key": resolved_api_key, "Content-Type": "application/json"},
+        json=payload,
+        timeout=90,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"ElevenLabs preview endpoint error: {response.status_code} {response.text}")
+
+    return response.content, "audio/mpeg"

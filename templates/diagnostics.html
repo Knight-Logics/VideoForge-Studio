@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoForge Diagnostics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06131f;
+      --panel: #0a2238;
+      --line: rgba(140, 180, 230, 0.3);
+      --text: #e8f0ff;
+      --muted: #9fb5d3;
+      --accent: #32d7a2;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top, #10395c 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .panel {
+      max-width: 1200px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.2rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .meta strong { color: var(--accent); }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: #12395b;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover { filter: brightness(1.08); }
+
+    pre {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: #03101b;
+      min-height: 68vh;
+      max-height: 68vh;
+      overflow: auto;
+      font-size: 0.8rem;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <section class="panel">
+    <h1>VideoForge Live Diagnostics</h1>
+    <div class="meta">
+      <div>Version: <strong id="appVersion">...</strong></div>
+      <div>Desktop shell: <strong id="desktopShell">...</strong></div>
+      <div>Log file: <strong id="logFile">...</strong></div>
+      <div>Last refresh: <strong id="lastRefresh">never</strong></div>
+    </div>
+    <div class="controls">
+      <button id="refreshBtn" type="button">Refresh Now</button>
+      <button id="toggleBtn" type="button">Pause Auto Refresh</button>
+    </div>
+    <pre id="logOutput">Loading diagnostics logs...</pre>
+  </section>
+
+  <script>
+    const appVersion = document.getElementById("appVersion");
+    const desktopShell = document.getElementById("desktopShell");
+    const logFile = document.getElementById("logFile");
+    const lastRefresh = document.getElementById("lastRefresh");
+    const logOutput = document.getElementById("logOutput");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const toggleBtn = document.getElementById("toggleBtn");
+
+    let autoRefresh = true;
+
+    async function refreshLogs() {
+      try {
+        const response = await fetch("/api/diagnostics/logs?lines=300");
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "Could not read logs");
+        }
+
+        appVersion.textContent = data.app_version || "unknown";
+        desktopShell.textContent = data.desktop_shell || "unknown";
+        logFile.textContent = data.log_file || "unknown";
+        logOutput.textContent = (data.lines || []).join("\n") || "Log file is empty.";
+        lastRefresh.textContent = new Date().toLocaleTimeString();
+        logOutput.scrollTop = logOutput.scrollHeight;
+      } catch (error) {
+        logOutput.textContent = `Diagnostics refresh failed: ${error.message}`;
+      }
+    }
+
+    refreshBtn.addEventListener("click", () => {
+      refreshLogs();
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      autoRefresh = !autoRefresh;
+      toggleBtn.textContent = autoRefresh ? "Pause Auto Refresh" : "Resume Auto Refresh";
+    });
+
+    setInterval(() => {
+      if (autoRefresh) {
+        refreshLogs();
+      }
+    }, 2500);
+
+    refreshLogs();
+  </script>
+</body>
+</html>

@@ -10,7 +10,7 @@ What it includes:
 - Bundled Python runtime
 - Bundled `ffmpeg.exe`
 - Bundled `ffprobe.exe`
-- Local browser-based UI launcher
+- Standalone desktop window that embeds the same VideoForge UI
 
 ## EXE fast start
 
@@ -18,8 +18,10 @@ What it includes:
 2. Extract the zip to any folder
 3. Open the extracted `VideoForge-Studio` folder
 4. Double-click `VideoForge-Studio.exe`
-5. Your browser opens to:
-   - `http://127.0.0.1:5050`
+5. VideoForge opens in its own desktop window
+
+If needed, you can still use the local browser URL:
+- `http://127.0.0.1:5050`
 
 ## Source-mode fallback
 
@@ -37,8 +39,7 @@ Use this only if you want to run from source instead of the packaged exe.
 2. Extract the zip to any folder
 3. Double-click `install_videoforge.bat`
 4. After setup completes, double-click `start_videoforge.bat`
-5. Your browser opens to:
-   - `http://127.0.0.1:5050`
+5. VideoForge opens in its own desktop window
 
 ## Source-mode setup details
 
@@ -54,6 +55,7 @@ Install FFmpeg and make sure `ffmpeg` works in a new terminal.
 ## What happens when you run it
 
 - The web interface opens locally in your browser
+- The same web interface is embedded in a standalone desktop window by default
 - Rendering uses your own computer resources
 - No render workload is sent to Knight Logics infrastructure
 
@@ -71,7 +73,11 @@ Install Python 3.12 and reopen the script.
 
 Install FFmpeg and add it to PATH.
 
-### Browser does not open
+### Window does not open
+
+Run `VideoForge-Studio.exe` again from the extracted folder. If needed, set `VIDEOFORGE_UI_MODE=browser` and launch again to use the browser fallback.
+
+### Browser fallback
 
 Visit manually:
 - `http://127.0.0.1:5050`
