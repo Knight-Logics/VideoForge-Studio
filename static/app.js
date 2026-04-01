@@ -16,6 +16,7 @@ const renderCreditUsage = document.getElementById("renderCreditUsage");
 const outputPreset = document.getElementById("outputPreset");
 const outputWidthInput = document.getElementById("outputWidth");
 const outputHeightInput = document.getElementById("outputHeight");
+const renderFpsInput = document.getElementById("renderFps");
 const clipPickerInput = document.getElementById("clipPicker");
 const clipCountStatus = document.getElementById("clipCountStatus");
 const openClipPickerBtn = document.getElementById("openClipPickerBtn");
@@ -62,6 +63,12 @@ const musicLevelRow = document.getElementById("musicLevelRow");
 const includeMusic = document.getElementById("includeMusic");
 const intermissionPreviewRow = document.getElementById("intermissionPreviewRow");
 const intermissionOpacityWrap = document.getElementById("intermissionOpacityWrap");
+const autoPreviewInput = document.getElementById("autoPreview");
+const refreshPreviewBtn = document.getElementById("refreshPreviewBtn");
+const performanceTier = document.getElementById("performanceTier");
+const performanceSummary = document.getElementById("performanceSummary");
+const performanceDrivers = document.getElementById("performanceDrivers");
+const previewBehaviorNote = document.getElementById("previewBehaviorNote");
 const CLIP_DROPZONE_EMPTY_MESSAGE = "Drop video files here or click Add Clips";
 
 // ── Access code recovery elements ──────────────────────────────────────────
@@ -103,6 +110,7 @@ const closeBuyCreditsModalBtn = document.getElementById("closeBuyCreditsModalBtn
 
 let selectedBuyCredits = 1;
 let secureCreditsPromptDismissed = false;
+let previewDirty = false;
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -248,6 +256,129 @@ async function checkForAppUpdate() {
 function refreshSelectedUploadSize() {
   const totalBytes = getSelectedUploadBytes();
   selectedUploadSize.textContent = `Selected upload size: ${formatBytes(totalBytes)} / limit ${maxUploadMb} MB`;
+}
+
+function getSelectedFps() {
+  return Number(renderFpsInput && renderFpsInput.value ? renderFpsInput.value : 30) || 30;
+}
+
+function getRenderLoadAssessment() {
+  const width = Number(outputWidthInput && outputWidthInput.value) || 1440;
+  const height = Number(outputHeightInput && outputHeightInput.value) || 2560;
+  const fps = getSelectedFps();
+  const clipCount = selectedClips.length;
+  const narrationEnabled = Boolean(enableNarrationInput && enableNarrationInput.checked);
+  const intermissionsEnabled = Boolean(useIntermissionsCheckbox && useIntermissionsCheckbox.checked);
+  const musicEnabled = Boolean(includeMusic && includeMusic.checked);
+  const pixelRatio = (width * height) / (1440 * 2560);
+
+  let score = pixelRatio * 1.4;
+  score += Math.max(0, (fps - 30) / 15) * 0.8;
+  score += Math.max(0, clipCount - 3) * 0.32;
+
+  if (fps >= 60) {
+    score += 1.4;
+  }
+  if (width >= 3840 || height >= 3840) {
+    score += 1.1;
+  }
+  if (narrationEnabled) {
+    score += 1.1;
+  }
+  if (intermissionsEnabled) {
+    score += 0.45;
+  }
+  if (musicEnabled) {
+    score += 0.25;
+  }
+
+  let tier = "Balanced";
+  let tierClass = "is-balanced";
+  if (score < 2.3) {
+    tier = "Fast";
+    tierClass = "is-fast";
+  } else if (score >= 4.7 && score < 6.5) {
+    tier = "Heavy";
+    tierClass = "is-heavy";
+  } else if (score >= 6.5) {
+    tier = "Extreme";
+    tierClass = "is-extreme";
+  }
+
+  const drivers = [];
+  if (fps >= 60) drivers.push("60 FPS motion smoothing increases frame workload");
+  if (width >= 3840 || height >= 3840) drivers.push("4K-class resolution pushes encode and overlay time up");
+  else if (pixelRatio >= 1.2) drivers.push("High-resolution output increases scaling and encoding cost");
+  if (clipCount >= 7) drivers.push(`${clipCount} clips create a longer full render sequence`);
+  if (narrationEnabled) drivers.push("Narration adds ElevenLabs generation and caption timing work");
+  if (intermissionsEnabled) drivers.push("Intermissions add extra generated segments between clips");
+  if (musicEnabled) drivers.push("Background music adds another audio mix pass");
+  if (!drivers.length) drivers.push("Current settings stay near the faster side of the workflow");
+
+  let summary = `Rendering at ${width}x${height} and ${fps} FPS with ${clipCount || 0} clip${clipCount === 1 ? "" : "s"}.`;
+  if (tier === "Fast") {
+    summary += " Good for quick iteration and preview turnaround.";
+  } else if (tier === "Balanced") {
+    summary += " A solid middle ground between polish and speed.";
+  } else if (tier === "Heavy") {
+    summary += " Expect noticeably longer preview and final export times.";
+  } else {
+    summary += " Best reserved for final showcase exports rather than constant tweaking.";
+  }
+
+  return { tier, tierClass, summary, drivers };
+}
+
+function updatePerformanceInsights() {
+  if (!performanceTier || !performanceSummary || !performanceDrivers) {
+    return;
+  }
+
+  const assessment = getRenderLoadAssessment();
+  performanceTier.textContent = assessment.tier;
+  performanceTier.className = `performance-tier ${assessment.tierClass}`;
+  performanceSummary.textContent = assessment.summary;
+  performanceDrivers.innerHTML = "";
+
+  assessment.drivers.forEach((driver) => {
+    const pill = document.createElement("span");
+    pill.className = "performance-driver-pill";
+    pill.textContent = driver;
+    performanceDrivers.appendChild(pill);
+  });
+}
+
+function updatePreviewModeUI() {
+  if (refreshPreviewBtn) {
+    refreshPreviewBtn.disabled = selectedClips.length === 0;
+    refreshPreviewBtn.textContent = previewDirty ? "Refresh Preview" : "Rebuild Preview";
+  }
+
+  if (!previewBehaviorNote) {
+    return;
+  }
+
+  if (!selectedClips.length) {
+    previewBehaviorNote.textContent = "Add clips to enable preview generation.";
+    return;
+  }
+
+  const autoPreviewEnabled = Boolean(autoPreviewInput && autoPreviewInput.checked);
+  if (autoPreviewEnabled) {
+    previewBehaviorNote.textContent = previewDirty
+      ? "Preview will rebuild automatically after you pause changes."
+      : "Preview auto-refresh is on.";
+    return;
+  }
+
+  previewBehaviorNote.textContent = previewDirty
+    ? "Preview auto-refresh is paused. Click Refresh Preview when you are ready to rebuild with the latest settings."
+    : "Preview auto-refresh is off. Click Refresh Preview whenever you want a manual rebuild.";
+}
+
+function setPreviewDirtyState(isDirty) {
+  previewDirty = Boolean(isDirty);
+  updatePreviewModeUI();
 }
 
 function log(message) {
@@ -428,6 +559,8 @@ function renderClipGallery() {
   clipCountStatus.textContent = `${selectedClips.length} clip${selectedClips.length === 1 ? "" : "s"} selected`;
   updateClipDropzoneState(false);
   refreshSelectedUploadSize();
+  updatePerformanceInsights();
+  updatePreviewModeUI();
   requestAnimationFrame(updateClipSliderState);
 }
 
@@ -1004,6 +1137,9 @@ async function handleCheckoutReturn() {
   }
 
   const token = (getTokenInput() && getTokenInput().value.trim()) || localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  const statusBanner = document.getElementById("paymentStatusBanner");
+  const successContent = document.getElementById("paymentSuccessContent");
+  const cancelContent = document.getElementById("paymentCancelContent");
 
   try {
     if (paymentState === "success") {
@@ -1017,14 +1153,28 @@ async function handleCheckoutReturn() {
         await refreshTokenCreditsUI(token);
         showAccessCodeBanner(token, true);
       }
+      if (statusBanner && successContent) {
+        statusBanner.hidden = false;
+        successContent.hidden = false;
+        if (cancelContent) cancelContent.hidden = true;
+        statusBanner.classList.add("success");
+        statusBanner.classList.remove("cancel");
+      }
       if (linkEmailStatus) {
         const emailLinked = Boolean(accountBillingStatus && accountBillingStatus.email_linked);
         linkEmailStatus.textContent = emailLinked
-          ? "Payment complete. Your credits are available and already secured by email."
-          : "Payment complete. Save this access code, then secure it with your email below so you can restore credits later.";
+          ? "Your credits are available and already secured by email."
+          : "Save this access code, then secure it with your email below so you can restore credits later.";
       }
       maybePromptToSecureCredits(true);
     } else if (paymentState === "cancel") {
+      if (statusBanner && cancelContent) {
+        statusBanner.hidden = false;
+        cancelContent.hidden = false;
+        if (successContent) successContent.hidden = true;
+        statusBanner.classList.add("cancel");
+        statusBanner.classList.remove("success");
+      }
       if (linkEmailStatus) {
         linkEmailStatus.textContent = "Checkout was canceled. Your existing credits and free uses are unchanged.";
       }
@@ -1228,6 +1378,7 @@ form.addEventListener("submit", async (event) => {
   const musicLevel = includeMusicChecked ? Number(musicLevelInput.value) / 100 : 0.15;
   const outputWidth = Number(outputWidthInput.value);
   const outputHeight = Number(outputHeightInput.value);
+  const fps = getSelectedFps();
   const titleFontFamily = titleFontFamilyInput.value;
   const listFontFamily = listFontFamilyInput.value;
   const titleFontSize = Number(titleFontSizeInput.value);
@@ -1311,6 +1462,7 @@ form.addEventListener("submit", async (event) => {
   payload.append("title_line_2", titleLine2);
   payload.append("output_width", String(outputWidth));
   payload.append("output_height", String(outputHeight));
+  payload.append("fps", String(fps));
   payload.append("title_font_family", titleFontFamily);
   payload.append("list_font_family", listFontFamily);
   payload.append("title_font_size", String(titleFontSize));
@@ -1340,6 +1492,7 @@ form.addEventListener("submit", async (event) => {
       title_line_2: titleLine2,
       output_width: parseInt(outputWidthInput.value) || 1920,
       output_height: parseInt(outputHeightInput.value) || 1080,
+      fps,
     };
     statusText.textContent = "running (0%)";
     jobText.textContent = `Job ${jobId}`;
@@ -1645,6 +1798,21 @@ fetch("/api/app-config")
     outputWidthInput.value = selected[0];
     outputHeightInput.value = selected[1];
 
+    if (renderFpsInput) {
+      renderFpsInput.innerHTML = "";
+      const fpsOptions = Array.isArray(cfg.fps_options) && cfg.fps_options.length ? cfg.fps_options : [24, 30, 60];
+      const defaultFps = Number(cfg.default_render_fps || 30);
+      fpsOptions.forEach((fpsValue) => {
+        const opt = document.createElement("option");
+        opt.value = String(fpsValue);
+        opt.textContent = Number(fpsValue) >= 60 ? `${fpsValue} FPS (slowest)` : `${fpsValue} FPS`;
+        if (Number(fpsValue) === defaultFps) {
+          opt.selected = true;
+        }
+        renderFpsInput.appendChild(opt);
+      });
+    }
+
     if (voiceIdInput) {
       const voiceOptions = Array.isArray(cfg.voice_options) ? cfg.voice_options : [];
       const defaultVoiceId = String(cfg.default_voice_id || "").trim();
@@ -1669,6 +1837,8 @@ fetch("/api/app-config")
 
     renderClipGallery();
     refreshSelectedUploadSize();
+    updatePerformanceInsights();
+    updatePreviewModeUI();
   })
   .catch((error) => {
     uploadLimitNote.textContent = "Upload limit: unavailable";
@@ -1750,6 +1920,13 @@ outputPreset.addEventListener("change", () => {
   });
 });
 
+if (renderFpsInput) {
+  renderFpsInput.addEventListener("change", () => {
+    markFinalRenderDirty();
+    schedulePreviewUpdate();
+  });
+}
+
 const useIntermissionsCheckbox = document.getElementById("useIntermissions");
 if (useIntermissionsCheckbox) {
   useIntermissionsCheckbox.addEventListener("change", () => {
@@ -1804,7 +1981,23 @@ if (enableNarrationInput) {
   enableNarrationInput.addEventListener("change", () => {
     markFinalRenderDirty();
     updateNarrationBillingUI();
-    schedulePreviewUpdate();
+    updatePerformanceInsights();
+  });
+}
+
+if (autoPreviewInput) {
+  autoPreviewInput.addEventListener("change", () => {
+    updatePreviewModeUI();
+    if (autoPreviewInput.checked && previewDirty) {
+      schedulePreviewUpdate();
+    }
+  });
+}
+
+if (refreshPreviewBtn) {
+  refreshPreviewBtn.addEventListener("click", () => {
+    clearTimeout(previewDebounceTimer);
+    generatePreview();
   });
 }
 
@@ -1907,6 +2100,7 @@ async function generatePreview() {
     previewStatusBar.hidden = true;
     previewVideo.hidden = true;
     previewStatus.textContent = "Upload clips to auto-generate preview.";
+    setPreviewDirtyState(false);
     return;
   }
 
@@ -1924,6 +2118,7 @@ async function generatePreview() {
   const includeMusicChecked = Boolean(includeMusic && includeMusic.checked);
   const backgroundMusicFile = document.getElementById("backgroundMusic").files[0];
   const musicLevel = includeMusicChecked ? Number(musicLevelInput.value) / 100 : 0.15;
+  const fps = getSelectedFps();
 
   if (selectedClips[0]?.objectUrl) {
     previewVideo.src = selectedClips[0].objectUrl;
@@ -1941,6 +2136,7 @@ async function generatePreview() {
   payload.append("title_line_2", titleLine2);
   payload.append("output_width", outputWidthInput.value);
   payload.append("output_height", outputHeightInput.value);
+  payload.append("fps", String(fps));
   payload.append("title_font_family", titleFontFamilyInput.value);
   payload.append("list_font_family", listFontFamilyInput.value);
   payload.append("title_font_size", titleFontSizeInput.value);
@@ -1968,6 +2164,7 @@ async function generatePreview() {
     previewProgressWrap.hidden = true;
     previewStatusBar.hidden = true;
     previewStatus.textContent = `Preview failed: ${error.message}`;
+    setPreviewDirtyState(true);
     return;
   }
 
@@ -2001,6 +2198,7 @@ async function generatePreview() {
     previewStatus.textContent = includeMusicChecked
       ? "Preview ready. Audio playback reflects your background music mix. ElevenLabs narration still applies on final render only."
       : "Preview ready. ElevenLabs narration still applies on final render only.";
+    setPreviewDirtyState(false);
     setTimeout(() => {
       previewProgressWrap.hidden = true;
       previewStatusBar.hidden = true;
@@ -2029,10 +2227,17 @@ async function generatePreview() {
 }
 
 function schedulePreviewUpdate() {
+  updatePerformanceInsights();
+  setPreviewDirtyState(true);
+  if (autoPreviewInput && !autoPreviewInput.checked) {
+    clearTimeout(previewDebounceTimer);
+    return;
+  }
+
   clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => {
     generatePreview();
-  }, 500);
+  }, 700);
 }
 
 function updateIntermissionPreview() {
@@ -2086,6 +2291,8 @@ syncIntermissionUI();
 updateIntermissionPreview();
 initCaptionGuide();
 updateNarrationBillingUI();
+updatePerformanceInsights();
+updatePreviewModeUI();
 
 // ── Access code recovery ────────────────────────────────────────────────────
 

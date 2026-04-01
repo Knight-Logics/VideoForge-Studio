@@ -89,6 +89,35 @@
           </div>
 
           <div class="row">
+            <div class="settings-card performance-card">
+              <h3 class="settings-card-title">Performance &amp; Timing</h3>
+              <div class="row two-col performance-top-row">
+                <label>
+                  Render FPS
+                  <select id="renderFps"></select>
+                </label>
+                <div class="preview-refresh-controls">
+                  <label class="toggle compact-toggle">
+                    <input type="checkbox" id="autoPreview" checked>
+                    <span>Auto-refresh preview while adjusting settings</span>
+                  </label>
+                  <button type="button" id="refreshPreviewBtn" class="secondary-btn">Refresh Preview</button>
+                </div>
+              </div>
+              <p class="field-note">Higher resolution, 60 FPS, more clips, intermissions, music, and narration all increase total render time.</p>
+              <div class="performance-summary-box">
+                <div class="performance-tier-row">
+                  <span class="field-note">Current render load</span>
+                  <span id="performanceTier" class="performance-tier is-balanced">Balanced</span>
+                </div>
+                <p id="performanceSummary" class="field-note">Choose output size and FPS based on speed versus finish quality.</p>
+                <div id="performanceDrivers" class="performance-drivers"></div>
+                <p id="previewBehaviorNote" class="field-note">Preview auto-refresh is on.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
             <p class="field-note">Clip Upload</p>
             <div class="clip-upload-controls">
               <button type="button" id="openClipPickerBtn" class="secondary-btn">Add Clips</button>
@@ -260,6 +289,25 @@
             <p id="finalRenderSummary" class="field-note">No final render yet.</p>
             <a id="downloadLink" class="download-link centered-download" href="#" hidden>Download Rendered Video</a>
             <div class="access-code-section">
+              <!-- Payment Status Banner: shown after returning from Stripe checkout -->
+              <div id="paymentStatusBanner" class="payment-status-banner" hidden>
+                <div id="paymentStatusContent">
+                  <div id="paymentSuccessContent" class="payment-status-content" hidden>
+                    <span class="status-icon status-success">✓</span>
+                    <div class="status-message">
+                      <strong>Payment Complete!</strong>
+                      <p class="field-note">Your credits have been added. You're ready to render.</p>
+                    </div>
+                  </div>
+                  <div id="paymentCancelContent" class="payment-status-content" hidden>
+                    <span class="status-icon status-cancel">✕</span>
+                    <div class="status-message">
+                      <strong>Payment Cancelled</strong>
+                      <p class="field-note">Your account was not charged. You can try again anytime.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <!-- Access Code Banner: shown after a user has paid credits -->
               <div id="accessCodeBanner" class="access-code-banner" hidden>
                 <div class="access-code-header">

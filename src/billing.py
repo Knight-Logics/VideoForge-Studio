@@ -235,6 +235,58 @@ class BillingStore:
             )
             return updated_remaining
 
+    def consume_credits_priority(
+        self, token: str, cost: int, source: str = "render"
+    ) -> tuple[bool, int, int, int]:
+        """
+        Consume credits with priority: free trial first, then paid credits.
+        
+        Returns: (success: bool, free_trial_used: int, paid_used: int, remaining_balance: int)
+        
+        If insufficient total balance, returns (False, 0, 0, current_balance).
+        On success, returns (True, free_trial_used, paid_used, total_remaining).
+        """
+        if cost <= 0:
+            raise ValueError("cost must be > 0")
+
+        with self._lock:
+            payload = self._read()
+            record = self._get_token_record(payload, token)
+            current_free_trial = int(record.get("free_trial_remaining", 0))
+            current_paid = int(record.get("paid_credits", 0))
+            total_available = current_free_trial + current_paid
+
+            if total_available < cost:
+                # Insufficient credits — return failure
+                return False, 0, 0, total_available
+
+            # Burn free trial first, then paid
+            free_trial_used = min(current_free_trial, cost)
+            paid_used = cost - free_trial_used
+
+            record["free_trial_remaining"] = current_free_trial - free_trial_used
+            record["paid_credits"] = current_paid - paid_used
+            record["last_updated_at"] = self._utc_now()
+            self._sync_record_totals(record)
+            
+            updated_balance = int(record.get("credits", 0))
+            self._write(payload)
+            
+            self._audit(
+                "credits_consumed_priority",
+                {
+                    "token": token,
+                    "source": source,
+                    "cost": cost,
+                    "free_trial_used": free_trial_used,
+                    "paid_used": paid_used,
+                    "balance": updated_balance,
+                    "paid_balance": int(record.get("paid_credits", 0)),
+                    "free_trial_remaining": int(record.get("free_trial_remaining", 0)),
+                },
+            )
+            return True, free_trial_used, paid_used, updated_balance
+
     def claim_free_trial(self, token: str, claim_key: str, credits: int, source: str = "free_trial") -> tuple[bool, int]:
         if credits <= 0:
             raise ValueError("credits must be > 0")

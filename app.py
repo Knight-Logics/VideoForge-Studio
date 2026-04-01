@@ -71,7 +71,7 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
-APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.3").strip()
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.4").strip()
 APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
 APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
@@ -91,6 +91,16 @@ DEFAULT_ELEVENLABS_VOICE_OPTIONS = [
     {"id": "EXAVITQu4vr4xnSDxMaL", "label": "Sarah"},
     {"id": "TX3LPaxmHKxFdv7VOQHJ", "label": "Liam"},
 ]
+
+_configured_fps_values = [
+    int(value.strip())
+    for value in os.environ.get("RENDER_FPS_OPTIONS", "24,30,60").split(",")
+    if value.strip().isdigit()
+]
+RENDER_FPS_OPTIONS = tuple(sorted({value for value in _configured_fps_values if 12 <= value <= 120})) or (24, 30, 60)
+DEFAULT_RENDER_FPS = int(os.environ.get("DEFAULT_RENDER_FPS", "30"))
+if DEFAULT_RENDER_FPS not in RENDER_FPS_OPTIONS:
+    DEFAULT_RENDER_FPS = 30 if 30 in RENDER_FPS_OPTIONS else RENDER_FPS_OPTIONS[0]
 
 job_manager = JobManager(WORKSPACE)
 render_history = RenderHistory(RENDER_HISTORY_FILE)
@@ -155,6 +165,19 @@ def _save_upload(file_storage, target_dir: Path, prefix: str) -> Path:
 
 def _count_words(text: str) -> int:
     return len([token for token in text.strip().split() if token])
+
+
+def _parse_render_fps(raw_value: str) -> int:
+    try:
+        fps = int(str(raw_value or DEFAULT_RENDER_FPS).strip())
+    except ValueError as exc:
+        raise ValueError("fps must be numeric") from exc
+
+    if fps not in RENDER_FPS_OPTIONS:
+        allowed = ", ".join(str(value) for value in RENDER_FPS_OPTIONS)
+        raise ValueError(f"fps must be one of: {allowed}")
+
+    return fps
 
 
 def _sanitize_user_text(value: str, field_name: str, max_length: int) -> str:
@@ -494,6 +517,7 @@ def create_app() -> Flask:
         use_intermissions = (request.form.get("use_intermissions") or "").lower() != "false"
         output_width_raw = (request.form.get("output_width") or "1440").strip()
         output_height_raw = (request.form.get("output_height") or "2560").strip()
+        fps_raw = (request.form.get("fps") or str(DEFAULT_RENDER_FPS)).strip()
         title_font_family = (request.form.get("title_font_family") or "gill-sans-ultra-bold").strip() or "gill-sans-ultra-bold"
         list_font_family = (request.form.get("list_font_family") or "gill-sans-ultra-bold").strip() or "gill-sans-ultra-bold"
         title_font_size_raw = (request.form.get("title_font_size") or "96").strip()
@@ -509,6 +533,11 @@ def create_app() -> Flask:
             background_music_level = float(background_music_level_raw)
         except ValueError:
             return jsonify({"error": "output_width, output_height, title_font_size, list_font_size, intermission_opacity, and background_music_level must be numeric"}), 400
+
+        try:
+            fps = _parse_render_fps(fps_raw)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         if output_width < 360 or output_height < 360:
             return jsonify({"error": "output dimensions must be at least 360 pixels"}), 400
@@ -571,6 +600,7 @@ def create_app() -> Flask:
             list_font_family=list_font_family,
             title_font_size=title_font_size,
             list_font_size=list_font_size,
+            fps=fps,
             include_music=include_music,
             background_music=background_music,
             background_music_level=background_music_level,
@@ -583,7 +613,10 @@ def create_app() -> Flask:
 
         charged_token = None
         charged_credits = 0
-        consumed_free_trial_token = None
+        charged_free_trial_used = 0
+        charged_paid_used = 0
+        
+        # Determine total render cost and attempt credit consumption
         if settings.enable_narration:
             has_server_key = bool(os.environ.get("ELEVENLABS_API_KEY", ""))
             if not (ALLOW_SHARED_ELEVENLABS_KEY and has_server_key):
@@ -594,59 +627,73 @@ def create_app() -> Flask:
                 ), 400
 
             if REQUIRE_PAYMENT_FOR_SHARED_KEY:
-                paid_token = (request.form.get("paid_access_token") or "").strip()
-                if not paid_token:
+                access_token = (request.form.get("paid_access_token") or "").strip()
+                if not access_token:
                     return jsonify(
                         {
                             "error": "A paid_access_token is required for narration."
                         }
                     ), 402
 
-                if not is_valid_paid_access_token(paid_token):
+                if not is_valid_paid_access_token(access_token):
                     return jsonify({"error": "Invalid paid_access_token format."}), 400
 
-                consumed, remaining = billing_store.consume_credits(
-                    token=paid_token,
+                # Use unified priority consumption: free trial first, then paid
+                success, free_trial_used, paid_used, remaining_balance = billing_store.consume_credits_priority(
+                    token=access_token,
                     cost=narration_credit_cost,
-                    source="shared_key_narration_words",
+                    source="narration_render",
                 )
-                if not consumed:
+                if not success:
                     return jsonify(
                         {
-                            "error": "Insufficient token credits for narration.",
+                            "error": "Insufficient credits for narration render.",
                             "required_credits": narration_credit_cost,
-                            "remaining_credits": remaining,
+                            "remaining_credits": remaining_balance,
                             "narration_words": narration_word_count,
                         }
                     ), 402
-                charged_token = paid_token
+                charged_token = access_token
                 charged_credits = narration_credit_cost
+                charged_free_trial_used = free_trial_used
+                charged_paid_used = paid_used
         else:
+            # Non-narration renders: free to use. If user has a token with free trial,
+            # consume one free trial use. If insufficient free trial, try paid credits.
+            # If no token at all, allow the render for free.
             access_token = (request.form.get("paid_access_token") or "").strip()
             if access_token and is_valid_paid_access_token(access_token):
-                consumed, _remaining = billing_store.consume_free_trial_use(
+                # Try to consume credits with priority (free trial first)
+                success, free_trial_used, paid_used, remaining_balance = billing_store.consume_credits_priority(
                     token=access_token,
-                    count=1,
-                    source="final_render_free_trial",
+                    cost=1,
+                    source="free_render_priority",
                 )
-                if consumed:
-                    consumed_free_trial_token = access_token
+                if success:
+                    charged_token = access_token
+                    charged_credits = 1
+                    charged_free_trial_used = free_trial_used
+                    charged_paid_used = paid_used
+                # If consumption fails (0 credits), still allow render — it's a free render
 
         try:
+
             job = job_manager.create_job(settings)
         except Exception as exc:
             if charged_token:
-                billing_store.add_credits(
-                    token=charged_token,
-                    credits=charged_credits,
-                    source="shared_key_render_refund_enqueue_failure",
-                )
-            if consumed_free_trial_token:
-                billing_store.restore_free_trial_use(
-                    token=consumed_free_trial_token,
-                    count=1,
-                    source="final_render_free_trial_refund_enqueue_failure",
-                )
+                # Refund both free trial and paid credits used
+                if charged_free_trial_used > 0:
+                    billing_store.restore_free_trial_use(
+                        token=charged_token,
+                        count=charged_free_trial_used,
+                        source="render_priority_refund_enqueue_failure",
+                    )
+                if charged_paid_used > 0:
+                    billing_store.add_credits(
+                        token=charged_token,
+                        credits=charged_paid_used,
+                        source="render_priority_refund_enqueue_failure",
+                    )
             return jsonify({"error": str(exc)}), 500
 
         return jsonify({"job_id": job.job_id})
@@ -659,6 +706,7 @@ def create_app() -> Flask:
         background_music_level_raw = (request.form.get("background_music_level") or "0.15").strip()
         output_width_raw = (request.form.get("output_width") or "1440").strip()
         output_height_raw = (request.form.get("output_height") or "2560").strip()
+        fps_raw = (request.form.get("fps") or str(DEFAULT_RENDER_FPS)).strip()
         title_font_family = (request.form.get("title_font_family") or "gill-sans-ultra-bold").strip() or "gill-sans-ultra-bold"
         list_font_family = (request.form.get("list_font_family") or "gill-sans-ultra-bold").strip() or "gill-sans-ultra-bold"
         title_font_size_raw = (request.form.get("title_font_size") or "96").strip()
@@ -675,6 +723,11 @@ def create_app() -> Flask:
             background_music_level = float(background_music_level_raw)
         except ValueError:
             return jsonify({"error": "Dimension, font, opacity, and music values must be numeric"}), 400
+
+        try:
+            fps = _parse_render_fps(fps_raw)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         if output_width < 360 or output_height < 360:
             return jsonify({"error": "output dimensions must be at least 360 pixels"}), 400
@@ -723,7 +776,7 @@ def create_app() -> Flask:
             list_font_family=list_font_family,
             title_font_size=title_font_size,
             list_font_size=list_font_size,
-            fps=30,
+            fps=fps,
             include_music=include_music,
             background_music=background_music,
             background_music_level=background_music_level,
@@ -769,6 +822,8 @@ def create_app() -> Flask:
                     {"label": "16:19 (1440x1710)", "width": 1440, "height": 1710},
                     {"label": "4:5 (1440x1800)", "width": 1440, "height": 1800},
                 ],
+                "fps_options": list(RENDER_FPS_OPTIONS),
+                "default_render_fps": DEFAULT_RENDER_FPS,
                 "voice_options": _get_voice_options(),
                 "default_voice_id": DEFAULT_ELEVENLABS_VOICE_ID,
                 "desktop_shell": os.environ.get("VIDEOFORGE_DESKTOP_SHELL", "") or None,
