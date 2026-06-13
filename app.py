@@ -52,8 +52,8 @@ BILLING_TOKENS_FILE = Path(os.environ.get("BILLING_TOKENS_FILE", str(WORKSPACE /
 BILLING_AUDIT_FILE = Path(os.environ.get("BILLING_AUDIT_FILE", str(WORKSPACE / "billing_audit.jsonl")))
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "http://127.0.0.1:5050/?payment=success")
-STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "http://127.0.0.1:5050/?payment=cancel")
+STRIPE_SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "http://127.0.0.1:5055/?payment=success")
+STRIPE_CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "http://127.0.0.1:5055/?payment=cancel")
 STRIPE_CURRENCY = os.environ.get("STRIPE_CURRENCY", "usd")
 STRIPE_PRICE_1_CREDIT_CENTS = int(os.environ.get("STRIPE_PRICE_1_CREDIT_CENTS", "100"))
 FREE_TRIAL_CREDITS = max(0, int(os.environ.get("FREE_TRIAL_CREDITS", "3")))
@@ -67,11 +67,11 @@ SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "")
 APP_NAME = os.environ.get("APP_NAME", "VideoForge Studio")
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5050")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5055")
 APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
-APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5050")))
+APP_PORT = int(os.environ.get("APP_PORT", os.environ.get("PORT", "5055")))
 APP_DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
-APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.4").strip()
+APP_VERSION = (os.environ.get("APP_VERSION") or "0.4.5").strip()
 APP_UPDATE_ENABLED = os.environ.get("APP_UPDATE_ENABLED", "true").lower() == "true"
 APP_UPDATE_REPO = (os.environ.get("APP_UPDATE_REPO") or "Knight-Logics/VideoForge-Studio").strip()
 SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
@@ -976,7 +976,15 @@ def create_app() -> Flask:
 
     @app.get("/health")
     def health():
-        return jsonify({"ok": True, "app": "AutoTop5 Showcase App", "stripe_configured": bool(STRIPE_SECRET_KEY)})
+        return jsonify(
+            {
+                "ok": True,
+                "service": "videoforge-studio",
+                "app": APP_NAME,
+                "version": APP_VERSION,
+                "stripe_configured": bool(STRIPE_SECRET_KEY),
+            }
+        )
 
     @app.get("/api/billing/config")
     def billing_config():

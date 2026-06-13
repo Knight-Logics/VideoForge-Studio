@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from pathlib import Path
 
 from waitress import serve
 
 HOST = '127.0.0.1'
-PORT = 5050
-LOCAL_URL = f'http://{HOST}:{PORT}'
+DEFAULT_PORT = 5055
+PORT_SCAN_START = 5055
+PORT_SCAN_END = 5064
+HEALTH_PATH = '/health'
+SERVICE_ID = 'videoforge-studio'
 MAX_REQUEST_BODY_SIZE = 4294967296
 
 
@@ -29,6 +35,54 @@ def _get_resource_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _port_in_use(port: int) -> bool:
+    try:
+        with socket.create_connection((HOST, port), timeout=0.35):
+            return True
+    except OSError:
+        return False
+
+
+def _is_videoforge_health(port: int) -> bool:
+    url = f'http://{HOST}:{port}{HEALTH_PATH}'
+    try:
+        with urllib.request.urlopen(url, timeout=1.0) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError):
+        return False
+
+    if payload.get('service') == SERVICE_ID:
+        return True
+
+    app_name = str(payload.get('app', '')).lower()
+    return 'videoforge' in app_name or 'autotop5' in app_name
+
+
+def _resolve_port() -> int:
+    for env_key in ('VIDEOFORGE_PORT', 'APP_PORT', 'PORT'):
+        raw = os.environ.get(env_key, '').strip()
+        if raw.isdigit():
+            return int(raw)
+
+    for port in range(PORT_SCAN_START, PORT_SCAN_END + 1):
+        if not _port_in_use(port):
+            return port
+
+    raise RuntimeError(
+        f'VideoForge Studio could not find a free local port between {PORT_SCAN_START} and {PORT_SCAN_END}. '
+        'Close other local apps or set VIDEOFORGE_PORT.'
+    )
+
+
+def _configure_runtime_port(port: int) -> str:
+    os.environ['VIDEOFORGE_PORT'] = str(port)
+    os.environ['APP_PORT'] = str(port)
+    os.environ['PORT'] = str(port)
+    os.environ.setdefault('APP_HOST', HOST)
+    os.environ.setdefault('APP_BASE_URL', f'http://{HOST}:{port}')
+    return f'http://{HOST}:{port}'
+
+
 def _open_browser(url: str) -> None:
     time.sleep(1.5)
     webbrowser.open(url)
@@ -38,17 +92,16 @@ def _run_server() -> None:
     os.environ.setdefault('VIDEOFORGE_RUNTIME_ROOT', str(_get_runtime_root()))
     from app import app
 
-    serve(app, listen=f'{HOST}:{PORT}', max_request_body_size=MAX_REQUEST_BODY_SIZE)
+    port = int(os.environ.get('APP_PORT', str(DEFAULT_PORT)))
+    serve(app, host=HOST, port=port, max_request_body_size=MAX_REQUEST_BODY_SIZE)
 
 
-def _wait_for_server(timeout_seconds: float = 20.0) -> bool:
+def _wait_for_videoforge_server(port: int, timeout_seconds: float = 25.0) -> bool:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        try:
-            with socket.create_connection((HOST, PORT), timeout=0.5):
-                return True
-        except OSError:
-            time.sleep(0.15)
+        if _is_videoforge_health(port):
+            return True
+        time.sleep(0.15)
     return False
 
 
@@ -79,12 +132,18 @@ def _should_use_desktop_ui() -> bool:
         return False
 
 
-def _run_browser_mode() -> None:
-    threading.Thread(target=_open_browser, args=(LOCAL_URL,), daemon=True).start()
+def _run_browser_mode(local_url: str, port: int) -> None:
+    if _port_in_use(port) and not _is_videoforge_health(port):
+        raise RuntimeError(
+            f'Port {port} is already used by another app (likely Knight Command on 5050). '
+            'Close that app or set VIDEOFORGE_PORT to a free port.'
+        )
+
+    threading.Thread(target=_open_browser, args=(local_url,), daemon=True).start()
     _run_server()
 
 
-def _run_webview_mode() -> int:
+def _run_webview_mode(local_url: str, port: int) -> int:
     import webview
 
     os.environ['VIDEOFORGE_DESKTOP_SHELL'] = 'pywebview'
@@ -94,12 +153,15 @@ def _run_webview_mode() -> int:
     server_thread = threading.Thread(target=_run_server, daemon=True)
     server_thread.start()
 
-    if not _wait_for_server():
-        raise RuntimeError('VideoForge Studio could not start the local server on 127.0.0.1:5050.')
+    if not _wait_for_videoforge_server(port):
+        raise RuntimeError(
+            f'VideoForge Studio could not start its local server on {local_url}. '
+            'Another app may already be using that port.'
+        )
 
     webview.create_window(
         'VideoForge Studio',
-        LOCAL_URL,
+        local_url,
         width=1440,
         height=960,
         min_size=(1180, 760),
@@ -109,7 +171,7 @@ def _run_webview_mode() -> int:
     return 0
 
 
-def _run_desktop_mode() -> int:
+def _run_desktop_mode(local_url: str, port: int) -> int:
     from PySide6.QtCore import QUrl
     from PySide6.QtGui import QAction, QDesktopServices, QIcon
     from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
@@ -161,21 +223,26 @@ def _run_desktop_mode() -> int:
             toolbar.addAction(refresh_action)
 
             open_browser_action = QAction('Open In Browser', self)
-            open_browser_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(LOCAL_URL)))
+            open_browser_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(local_url)))
             toolbar.addAction(open_browser_action)
 
             diagnostics_action = QAction('Diagnostics', self)
-            diagnostics_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(f'{LOCAL_URL}/diagnostics')))
+            diagnostics_action.triggered.connect(
+                lambda: QDesktopServices.openUrl(QUrl(f'{local_url}/diagnostics'))
+            )
             toolbar.addAction(diagnostics_action)
 
-            self.view.load(QUrl(LOCAL_URL))
+            self.view.load(QUrl(local_url))
 
     os.environ['VIDEOFORGE_DESKTOP_SHELL'] = 'pyside6'
     server_thread = threading.Thread(target=_run_server, daemon=True)
     server_thread.start()
 
-    if not _wait_for_server():
-        raise RuntimeError('VideoForge Studio could not start the local server on 127.0.0.1:5050.')
+    if not _wait_for_videoforge_server(port):
+        raise RuntimeError(
+            f'VideoForge Studio could not start its local server on {local_url}. '
+            'Another app may already be using that port.'
+        )
 
     app = QApplication(sys.argv)
     app.setApplicationName('VideoForge Studio')
@@ -190,8 +257,17 @@ def _run_desktop_mode() -> int:
 
 
 def main() -> None:
+    port = _resolve_port()
+    local_url = _configure_runtime_port(port)
+
+    if _port_in_use(port) and not _is_videoforge_health(port):
+        raise RuntimeError(
+            f'Port {port} is already used by another app. Knight Command uses 5050; '
+            'VideoForge now defaults to 5055+. Close the conflicting app or set VIDEOFORGE_PORT.'
+        )
+
     if not _should_use_desktop_ui():
-        _run_browser_mode()
+        _run_browser_mode(local_url, port)
         return
 
     preferred_engine = os.environ.get('VIDEOFORGE_UI_ENGINE', 'webview').strip().lower()
@@ -199,16 +275,16 @@ def main() -> None:
     try:
         if preferred_engine == 'webview':
             try:
-                raise SystemExit(_run_webview_mode())
+                raise SystemExit(_run_webview_mode(local_url, port))
             except ImportError:
                 pass
-            raise SystemExit(_run_desktop_mode())
+            raise SystemExit(_run_desktop_mode(local_url, port))
 
         try:
-            raise SystemExit(_run_desktop_mode())
+            raise SystemExit(_run_desktop_mode(local_url, port))
         except ImportError:
             pass
-        raise SystemExit(_run_webview_mode())
+        raise SystemExit(_run_webview_mode(local_url, port))
     except RuntimeError as error:
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox

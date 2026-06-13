@@ -1,5 +1,5 @@
 #define MyAppName "VideoForge Studio"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.4.5"
 #define MyAppPublisher "Knight Logics"
 #define MyAppURL "https://github.com/Knight-Logics/VideoForge-Studio"
 #define MyAppExeName "VideoForge-Studio.exe"

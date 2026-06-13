@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 
 $maxUploadMb = 4096
 $appHost = '127.0.0.1'
-$appPort = 5050
+$appPort = 5055
 $envFile = Join-Path $PSScriptRoot '.env'
 if (Test-Path $envFile) {
 	Get-Content $envFile | ForEach-Object {
@@ -47,6 +47,5 @@ if (Test-Path $localPython) {
 	$pythonExe = 'python'
 }
 
-Write-Host "Starting VideoForge Studio on http://127.0.0.1:5050 ..."
 Write-Host "Starting VideoForge Studio on http://${appHost}:${appPort} ..."
 & $pythonExe -m waitress --listen=${appHost}:${appPort} --max-request-body-size=$maxRequestBodySize wsgi:app
